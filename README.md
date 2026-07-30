@@ -1,5 +1,7 @@
 # MyTube
 
+[![CI](https://github.com/pedroberaldo87/MyTube/actions/workflows/ci.yml/badge.svg)](https://github.com/pedroberaldo87/MyTube/actions/workflows/ci.yml)
+
 A Chrome extension that lets you organize your YouTube subscriptions, playlists, and videos into folders and tags — right inside YouTube.
 
 <p align="center">
@@ -21,7 +23,7 @@ A Chrome extension that lets you organize your YouTube subscriptions, playlists,
 - **Mark as read** — Per-channel, per-folder (recursive), or mark all
 - **Hover-to-act UI** — Action buttons appear on hover for channels in folders and library items (add to folder, tag, mute, delete, unsubscribe)
 - **Two themes** — Void (minimal dark) and Prism (warm colorful) with 6 accent colors
-- **Sidebar on YouTube** — Opens directly inside youtube.com, left or right, toggle with Cmd+.
+- **Sidebar on YouTube** — Opens directly inside youtube.com, left or right, toggle with ⌘/Ctrl + .
 - **Smart dedup** — 4-layer channel matching (ID, URL, handle, name) prevents duplicates across YouTube's inconsistent data formats
 - **Export / Import** — Full JSON backup with merge or replace modes
 - **Bilingual UI** — English and Brazilian Portuguese (all pages, including feed overlays)
@@ -83,7 +85,7 @@ Chrome hides new extensions behind the puzzle-piece icon. Click the puzzle piece
 ### 4. First run
 
 1. Go to **youtube.com** (reload the tab if you already had it open — content scripts only attach on load).
-2. Click the **MyTube** icon. The sidebar slides in from the right. On macOS, **⌘ + .** toggles it too.
+2. Click the **MyTube** icon. The sidebar slides in from the right. **⌘ + .** (macOS) or **Ctrl + .** toggles it too.
 3. Click **Subs** in the sidebar header to import your subscriptions, and **Lists** for your playlists.
 4. Create a folder and drag channels into it — or let [AI sorting](#ai-sorting-optional) propose the whole structure.
 
@@ -161,7 +163,7 @@ Uma extensao do Chrome que permite organizar suas inscricoes, playlists e videos
 - **Marcar como lido** — Por canal, por pasta inteira (recursivo), ou marcar tudo
 - **UI hover-to-act** — Botoes de acao aparecem no hover para canais nas pastas e itens da biblioteca (adicionar a pasta, tag, silenciar, excluir, desinscrever)
 - **Dois temas** — Void (minimalista escuro) e Prism (colorido quente) com 6 cores de destaque
-- **Sidebar no YouTube** — Abre direto dentro do youtube.com, esquerda ou direita, toggle com Cmd+.
+- **Sidebar no YouTube** — Abre direto dentro do youtube.com, esquerda ou direita, toggle com ⌘/Ctrl + .
 - **Dedup inteligente** — 4 camadas de matching de canais (ID, URL, handle, nome) evita duplicatas
 - **Exportar / Importar** — Backup completo em JSON com modos merge ou replace
 - **Interface bilingue** — Ingles e Portugues Brasileiro (todas as paginas, incluindo overlays de feed)
@@ -223,7 +225,7 @@ O Chrome esconde extensao nova atras do icone de quebra-cabeca. Clique no quebra
 #### 4. Primeiro uso
 
 1. Va no **youtube.com** (recarregue a aba se ela ja estava aberta — content script so entra no carregamento).
-2. Clique no icone do **MyTube**. A sidebar entra pela direita. No macOS, **⌘ + .** tambem alterna.
+2. Clique no icone do **MyTube**. A sidebar entra pela direita. **⌘ + .** (macOS) ou **Ctrl + .** tambem alterna.
 3. Clique em **Canais** no cabecalho da sidebar para importar suas inscricoes, e em **Listas** para as playlists.
 4. Crie uma pasta e arraste canais para dentro — ou deixe a [organizacao por IA](#organizacao-por-ia-opcional) propor a estrutura inteira.
 

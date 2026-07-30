@@ -270,7 +270,10 @@ if (!document.getElementById(ROOT_ID)) {
   })
 
   document.addEventListener('keydown', (e: KeyboardEvent) => {
-    if (e.metaKey && e.key === '.') {
+    // ⌘ no Mac, Ctrl no resto. Só `metaKey` deixava Windows e Linux sem atalho
+    // nenhum — e o README anunciava o atalho, então a tecla não respondia e
+    // parecia defeito da extensão.
+    if ((e.metaKey || e.ctrlKey) && e.key === '.') {
       e.preventDefault()
       if (visible) hide()
       else show()

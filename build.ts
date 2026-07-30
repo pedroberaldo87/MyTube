@@ -159,10 +159,12 @@ async function buildExtension() {
         run_at: 'document_idle',
       },
     ],
+    // Cada linha aqui é um item a mais no diálogo de instalação do Chrome, então
+    // nenhuma entra "por precaução": `activeTab` estava declarada e sem uso nenhum
+    // — o acesso ao YouTube já vem de `host_permissions`.
     permissions: [
       'storage',
       'unlimitedStorage',
-      'activeTab',
       'tabs',
       'alarms',
     ],

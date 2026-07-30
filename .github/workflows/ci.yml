@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      # Seis dos testes sobem um Chromium de verdade e afirmam sobre o que e
+      # renderizado. Sem o browser instalado eles falham na primeira linha, entao
+      # isto nao e opcional — e o que faz a suite valer em CI o mesmo que vale local.
+      - run: npx playwright install --with-deps chromium
+
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

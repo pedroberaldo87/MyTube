@@ -1,6 +1,9 @@
 {
   "name": "mytube",
   "version": "0.9.0",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "author": "Pedro Beraldo",
   "license": "GPL-3.0-only",
@@ -31,6 +34,7 @@
   "devDependencies": {
     "@preact/preset-vite": "^2.10.5",
     "@types/chrome": "^0.1.42",
+    "esbuild": "^0.25.12",
     "playwright": "^1.60.0",
     "tsx": "^4.22.3",
     "typescript": "^6.0.3",
