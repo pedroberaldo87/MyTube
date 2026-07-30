@@ -1,10 +1,10 @@
 import { h } from 'preact'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { createPortal } from 'preact/compat'
-import type { Folder, Organizable } from '../../../shared/types'
+import type { Folder, Organizable, Tag } from '../../../shared/types'
 import type { CategorizeSuggestion } from '../../../shared/ai/types'
 import { sendMessage } from '../../../shared/messages'
-import { addFolder } from '../../../shared/storage'
+import { addFolder, addTag } from '../../../shared/storage'
 import { flattenFolders } from '../../../shared/folders'
 import { useT } from '../../../shared/i18n'
 import { createOverlayRoot } from '../overlayRoot'
@@ -61,15 +61,23 @@ interface Group {
 interface Props {
   items: Organizable[]
   folders: Folder[]
+  tags: Tag[]
   onApplied: () => void
   onClose: () => void
 }
+
+/** Paleta do TagManager — tag nova nasce com a mesma cara das feitas à mão. */
+const TAG_COLORS = [
+  '#f44336', '#e91e63', '#9c27b0', '#673ab7',
+  '#3f51b5', '#2196f3', '#03a9f4', '#009688',
+  '#4caf50', '#ff9800', '#ff5722', '#795548',
+]
 
 function norm(s: string): string {
   return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase()
 }
 
-export function AICategorizePanel({ items, folders, onApplied, onClose }: Props) {
+export function AICategorizePanel({ items, folders, tags, onApplied, onClose }: Props) {
   const t = useT()
   const [done, setDone] = useState(0)
   const [running, setRunning] = useState(true)
@@ -88,6 +96,11 @@ export function AICategorizePanel({ items, folders, onApplied, onClose }: Props)
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set())
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [applyTotal, setApplyTotal] = useState(0)
+  /**
+   * Tags aceitas por item, por NOME. Pasta é uma e vira `Choice`; tag são várias
+   * e a revisão é remover a que não serve — por isso lista, e não seleção.
+   */
+  const [itemTags, setItemTags] = useState<Record<string, string[]>>({})
   /**
    * Fechar o painel no meio do laço não pode deixar os lotes seguintes rodando
    * (custam token) nem pintar estado num componente desmontado.
@@ -132,7 +145,7 @@ export function AICategorizePanel({ items, folders, onApplied, onClose }: Props)
   useEffect(() => {
     alive.current = true
     setDone(0); setRunning(true); setError(null); setChoices({}); setAnswered([]); setElapsed(0)
-    setUnchecked(new Set()); setExpanded(new Set()); setAuthor(null)
+    setUnchecked(new Set()); setExpanded(new Set()); setAuthor(null); setItemTags({})
 
     /**
      * Nomes que os lotes ANTERIORES já propuseram, realimentados como se fossem
@@ -142,6 +155,8 @@ export function AICategorizePanel({ items, folders, onApplied, onClose }: Props)
      * transforma 41 decisões independentes numa taxonomia só.
      */
     const proposed = new Map<string, string>()
+    /** Mesmo motivo das pastas: sem realimentar, cada lote inventa sinônimo. */
+    const proposedTags = new Map<string, string>()
 
     void (async () => {
       const folderList = folders.map(f => ({ id: f.id, name: f.name }))
@@ -158,6 +173,10 @@ export function AICategorizePanel({ items, folders, onApplied, onClose }: Props)
             folders: [
               ...folderList,
               ...[...proposed.values()].map(name => ({ id: PROPOSED_PREFIX + name, name })),
+            ],
+            tags: [
+              ...tags.map(t => ({ id: t.id, name: t.name })),
+              ...[...proposedTags.values()].map(name => ({ id: PROPOSED_PREFIX + name, name })),
             ],
           },
         })
@@ -198,6 +217,14 @@ export function AICategorizePanel({ items, folders, onApplied, onClose }: Props)
             : s.folderId ? { folderId: s.folderId }
             : s.newFolder ? { newFolder: s.newFolder } : null
         }
+        return next
+      })
+      for (const s of suggestions) {
+        for (const t of s.tags) proposedTags.set(norm(t), t)
+      }
+      setItemTags(prev => {
+        const next = { ...prev }
+        for (const s of suggestions) if (s.tags.length > 0) next[s.id] = s.tags
         return next
       })
       setAnswered(prev => [...prev, ...suggestions.map(s => s.id)])
@@ -257,6 +284,10 @@ export function AICategorizePanel({ items, folders, onApplied, onClose }: Props)
     })
   }, [])
 
+  const dropTag = useCallback((itemId: string, tag: string) => {
+    setItemTags(prev => ({ ...prev, [itemId]: (prev[itemId] ?? []).filter(t => t !== tag) }))
+  }, [])
+
   const toggleExpand = useCallback((key: string) => {
     setExpanded(prev => {
       const next = new Set(prev)
@@ -285,6 +316,9 @@ export function AICategorizePanel({ items, folders, onApplied, onClose }: Props)
       // Pastas novas nascem UMA vez por nome: sem esta memória, dez canais que a
       // IA mandou para "Programação" criariam dez pastas homônimas.
       const created = new Map<string, string>(folders.map(f => [norm(f.name), f.id]))
+      // Mesma memória das pastas: tag nasce UMA vez por nome, senão vinte canais
+      // marcados "Inglês" criam vinte tags homônimas.
+      const createdTags = new Map<string, string>(tags.map(t => [norm(t.name), t.id]))
       let n = 0
       for (const item of list) {
         setApplied(++n)
@@ -299,13 +333,27 @@ export function AICategorizePanel({ items, folders, onApplied, onClose }: Props)
           folderId = existing ?? (await addFolder(choice.newFolder, null, NEW_FOLDER_COLOR)).id
           created.set(key, folderId)
         }
-        await sendMessage({ type: 'UPDATE_ORGANIZABLE', payload: { ...item, folderId } })
+
+        // Tags SOMAM ao que o item já tinha — a IA sugere, não substitui o que
+        // o usuário marcou à mão.
+        const tagIds = [...item.tagIds]
+        for (const name of itemTags[item.id] ?? []) {
+          const key = norm(name)
+          let id = createdTags.get(key)
+          if (!id) {
+            id = (await addTag(name, TAG_COLORS[createdTags.size % TAG_COLORS.length])).id
+            createdTags.set(key, id)
+          }
+          if (!tagIds.includes(id)) tagIds.push(id)
+        }
+
+        await sendMessage({ type: 'UPDATE_ORGANIZABLE', payload: { ...item, folderId, tagIds } })
       }
       onApplied()
     } finally {
       setApplying(false)
     }
-  }, [applying, choices, folders, onApplied])
+  }, [applying, choices, folders, itemTags, onApplied, tags])
   const pct = items.length > 0 ? Math.round((done / items.length) * 100) : 0
   const allOn = picked.length > 0 && unchecked.size === 0
 
@@ -415,7 +463,20 @@ export function AICategorizePanel({ items, folders, onApplied, onClose }: Props)
                           <div key={item.id} style={S.itemRow}>
                             <input type="checkbox" style={S.check} checked={isChecked(item.id)}
                               onChange={() => toggleItem(item.id)} aria-label={item.name} />
-                            <span style={S.itemName} title={item.name}>{item.name}</span>
+                            <div style={S.itemMain}>
+                              <span style={S.itemName} title={item.name}>{item.name}</span>
+                              {(itemTags[item.id] ?? []).length > 0 && (
+                                <div style={S.tagRow}>
+                                  {(itemTags[item.id] ?? []).map(tg => (
+                                    <button key={tg} type="button" style={S.tagChip}
+                                      title={t('cat.dropTag')}
+                                      onClick={() => dropTag(item.id, tg)}>
+                                      {tg} <span style={S.tagX}>×</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                             {destinationSelect(item)}
                           </div>
                         ))}
@@ -565,8 +626,18 @@ const S: Record<string, h.JSX.CSSProperties> = {
     padding: '5px 8px 5px 10px', borderTop: '1px solid var(--mt-border)',
   },
   check: { width: '15px', height: '15px', flexShrink: 0, margin: 0, accentColor: 'var(--mt-accent)', cursor: 'pointer' },
+  itemMain: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '3px' },
+  tagRow: { display: 'flex', flexWrap: 'wrap', gap: '4px' },
+  tagChip: {
+    display: 'inline-flex', alignItems: 'center', gap: '4px',
+    padding: '1px 7px', borderRadius: 'var(--mt-radius-pill)',
+    border: '1px solid var(--mt-btn-border)', backgroundColor: 'var(--mt-btn-bg)',
+    color: 'var(--mt-text-secondary)', fontFamily: 'var(--mt-font-body)',
+    fontSize: 'var(--mt-font-size-xs)', cursor: 'pointer', lineHeight: 1.4,
+  },
+  tagX: { color: 'var(--mt-text-secondary)', fontWeight: 700 },
   itemName: {
-    flex: 1, minWidth: 0,
+    minWidth: 0,
     fontSize: 'var(--mt-font-size-sm)', fontFamily: 'var(--mt-font-body)',
     color: 'var(--mt-text-primary)', overflow: 'hidden',
     textOverflow: 'ellipsis', whiteSpace: 'nowrap',

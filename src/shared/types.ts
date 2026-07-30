@@ -4,6 +4,7 @@ import type {
   CategorizeFolder,
   CategorizeItem,
   CategorizeSuggestion,
+  CategorizeTag,
 } from './ai/types'
 import type { DeviceAuthCode, DeviceAuthStart } from './ai/device-auth'
 // `import type` de propósito: importar valor daqui fecharia um ciclo em runtime
@@ -128,7 +129,7 @@ export type MessageType =
   | { type: 'AI_OAUTH_COMPLETE'; payload: { label: string; code: DeviceAuthCode } }
   // UM lote por mensagem. Quem fatia a biblioteca em lotes é a sidebar: o
   // service worker do MV3 não sobrevive a uma fila longa de inferências.
-  | { type: 'AI_CATEGORIZE'; payload: { items: CategorizeItem[]; folders: CategorizeFolder[] } }
+  | { type: 'AI_CATEGORIZE'; payload: { items: CategorizeItem[]; folders: CategorizeFolder[]; tags?: CategorizeTag[] } }
   // Pedido da sidebar: abrir a janelinha de permissão de host. A resposta só
   // chega quando o usuário decide — é o desfecho, não um "recebi".
   | { type: 'AI_REQUEST_HOST_PERMISSION'; payload: { url: string } }

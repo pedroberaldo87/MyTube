@@ -463,6 +463,7 @@ async function handleMessage(
           await freshProvider(provider),
           message.payload.items,
           message.payload.folders,
+          message.payload.tags ?? [],
         )
         return { ok: true, suggestions, provider: provider.label, model: provider.model }
       } catch (err) {

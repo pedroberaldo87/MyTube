@@ -14,7 +14,7 @@ A Chrome extension that lets you organize your YouTube subscriptions, playlists,
 
 - **Folder hierarchy** — Organize channels, playlists, and videos into nested folders with drag-and-drop
 - **Tag system** — Cross-cutting labels for flexible categorization
-- **AI sorting** — Let a model propose a folder for every channel and playlist you haven't filed yet. Nothing is written until you approve it — see [below](#ai-sorting-optional)
+- **AI sorting** — Let a model propose a folder and tags for every channel and playlist you haven't filed yet. Nothing is written until you approve it — see [below](#ai-sorting-optional)
 - **Home feed** — Personal home page showing new videos from all your folders, with collapsible folder/channel sections and two modes: "new only" or "latest N per channel"
 - **Folder feed** — View all recent videos from a folder's channels in one page, grouped by channel
 - **NEW video badges** — New uploads are highlighted with accent borders, thumbnail badges, and meta row chips
@@ -46,6 +46,7 @@ Then hit **Test connection** to pick a model.
 
 **Sorting.** In the Library, **✨ Sort with AI** targets whatever you selected, or — with nothing selected — everything on screen that has no folder yet.
 
+- **It suggests tags too.** Each item can get up to three, reusing your existing tags before inventing new ones. A tag you do not want goes away with one click on its chip.
 - **Nothing is written until you accept.** Suggestions arrive grouped by destination folder, so a library of 800 channels is 8 decisions instead of 800. Check or uncheck a whole group or a single item, override any destination, then **Accept selected** or **Accept all**. New folders are created at that moment, never before.
 - **The header names the model that produced the suggestions.** Swapping models changes the result, so the answer belongs on screen.
 - **It takes a few minutes on a large library.** Items go out in batches of 20 and results stream in as each batch lands; the progress line shows the batch in flight and a running clock.
@@ -154,7 +155,7 @@ Uma extensao do Chrome que permite organizar suas inscricoes, playlists e videos
 
 - **Pastas hierarquicas** — Organize canais, playlists e videos em pastas aninhadas com drag-and-drop
 - **Sistema de tags** — Etiquetas transversais para categorizacao flexivel
-- **Organizacao por IA** — Deixe um modelo propor uma pasta para cada canal e playlist que ainda nao foi arquivado. Nada e gravado ate voce aprovar — veja [abaixo](#organizacao-por-ia-opcional)
+- **Organizacao por IA** — Deixe um modelo propor uma pasta e tags para cada canal e playlist que ainda nao foi arquivado. Nada e gravado ate voce aprovar — veja [abaixo](#organizacao-por-ia-opcional)
 - **Home feed** — Pagina inicial pessoal com videos novos de todas as pastas, secoes colapsaveis por pasta/canal, dois modos: "so novos" ou "ultimos N por canal"
 - **Feed de pasta** — Veja todos os videos recentes dos canais de uma pasta em uma pagina, agrupados por canal
 - **Badges de video novo** — Uploads novos destacados com borda accent, badge na thumbnail e chip na linha de metadados
@@ -186,6 +187,7 @@ Depois use **Testar conexao** para escolher o modelo.
 
 **Organizar.** Na Biblioteca, **✨ Organizar com IA** age sobre o que voce selecionou, ou — sem selecao — sobre tudo que esta na tela e ainda nao tem pasta.
 
+- **Ele sugere tags tambem.** Ate tres por item, reusando as tags que voce ja tem antes de inventar nome novo. Tag que voce nao quer sai com um clique no chip.
 - **Nada e gravado ate voce aceitar.** As sugestoes chegam agrupadas por pasta de destino, entao uma biblioteca de 800 canais vira 8 decisoes em vez de 800. Marque ou desmarque um grupo inteiro ou um item so, troque qualquer destino, e entao **Aceitar marcados** ou **Aceitar tudo**. Pastas novas nascem nesse momento, nunca antes.
 - **O cabecalho diz qual modelo produziu as sugestoes.** Trocar de modelo muda o resultado, entao a resposta tem que estar na tela.
 - **Leva alguns minutos numa biblioteca grande.** Os itens saem em lotes de 20 e os resultados vao aparecendo conforme cada lote volta; a linha de progresso mostra o lote em voo e um relogio correndo.

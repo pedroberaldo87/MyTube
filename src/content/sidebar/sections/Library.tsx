@@ -252,6 +252,7 @@ export function Library({ appState, newVideoCounts, onMarkChannelRead, onStateCh
         <AICategorizePanel
           items={aiItems}
           folders={folders}
+          tags={tags}
           onApplied={() => { setAiItems(null); exitSelectMode(); onStateChange() }}
           onClose={() => setAiItems(null)}
         />

@@ -21,10 +21,10 @@ const ok = parseSuggestions(
   ITEMS, FOLDERS,
 )
 assert.deepEqual(ok, [
-  { id: 'a', folderId: 'f1', newFolder: null },
-  { id: 'b', folderId: 'f2', newFolder: null },
+  { id: 'a', folderId: 'f1', newFolder: null, tags: [] },
+  { id: 'b', folderId: 'f2', newFolder: null, tags: [] },
   // nenhuma pasta serviu: vira proposta de nome, nunca um id inventado
-  { id: 'c', folderId: null, newFolder: 'Cozinha' },
+  { id: 'c', folderId: null, newFolder: 'Cozinha', tags: [] },
 ])
 
 // ── o array vem cercado de conversa e de cerca markdown ──────────────────────
@@ -33,7 +33,7 @@ const sujo = parseSuggestions(
   'Claro! Aqui está:\n```json\n[{"n":1,"folder":"Programação"}]\n```\nEspero ter ajudado.',
   ITEMS, FOLDERS,
 )
-assert.deepEqual(sujo, [{ id: 'a', folderId: 'f1', newFolder: null }])
+assert.deepEqual(sujo, [{ id: 'a', folderId: 'f1', newFolder: null, tags: [] }])
 
 // ── lixo não vira escrita ────────────────────────────────────────────────────
 
@@ -50,8 +50,34 @@ assert.deepEqual(parseSuggestions('[{"n":1,"folder":"A"},{"n":1,"folder":"B"}]',
 
 assert.deepEqual(
   parseSuggestions('[{"n":1,"folder":"Tech"}]', ITEMS, []),
-  [{ id: 'a', folderId: null, newFolder: 'Tech' }],
+  [{ id: 'a', folderId: null, newFolder: 'Tech', tags: [] }],
 )
+
+// ── tags: teto de 3, dedup sem acento nem caixa, lixo descartado ─────────────
+//
+// O teto está no prompt E aqui: prompt é pedido, não garantia. Dez tags por
+// canal não é organização, é ruído.
+
+const comTags = parseSuggestions(
+  '[{"n":1,"folder":"Programação","tags":["Iniciante","INICIANTE","iniciante","Inglês","Longo","Extra"]}]',
+  ITEMS, FOLDERS,
+)
+assert.deepEqual(comTags[0].tags, ['Iniciante', 'Inglês', 'Longo'], 'esperava dedup e corte em 3')
+
+assert.deepEqual(
+  parseSuggestions('[{"n":1,"folder":"Programação","tags":"nao e lista"}]', ITEMS, FOLDERS)[0].tags,
+  [], 'tags que não são lista viram lista vazia, não exceção',
+)
+assert.deepEqual(
+  parseSuggestions('[{"n":1,"folder":"Programação","tags":[null,3,"  ","ok"]}]', ITEMS, FOLDERS)[0].tags,
+  ['ok'], 'entradas que não são texto são descartadas',
+)
+
+// o prompt precisa ENSINAR a diferença entre tag e pasta, senão vira pasta duplicada
+const promptComTags = buildPrompt(ITEMS, FOLDERS, [{ id: 't1', name: 'Iniciante' }])
+assert.match(promptComTags, /TAGS QUE JÁ EXISTEM:\n- Iniciante/)
+assert.match(promptComTags, /atravessa pastas/, 'o prompt não explica o que distingue tag de pasta')
+assert.match(buildPrompt(ITEMS, FOLDERS), /TAGS QUE JÁ EXISTEM:\n\(nenhuma ainda\)/)
 
 // ── o prompt referencia por POSIÇÃO, não por id ──────────────────────────────
 

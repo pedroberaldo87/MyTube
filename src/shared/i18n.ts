@@ -375,6 +375,7 @@ const translations = {
   'cat.itemsWord': { en: 'items', 'pt-BR': 'itens' },
   'cat.skipped': { en: 'left out', 'pt-BR': 'de fora' },
   'cat.moveTo': { en: 'Move to', 'pt-BR': 'Mover para' },
+  'cat.dropTag': { en: 'Remove this tag', 'pt-BR': 'Tirar esta tag' },
   'cat.by': { en: 'by', 'pt-BR': 'por' },
   'cat.summary': { en: 'Where everything is going', 'pt-BR': 'Para onde tudo vai' },
   'cat.errNoProvider': {
