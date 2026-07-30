@@ -1,0 +1,240 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   MyTube Design Tokens — Multi-theme system
+   Theme class: .mytube-void or .mytube-prism (on :host)
+   Mode class:  .mytube-dark or .mytube-light (on :host)
+   Accent class: .mytube-accent-{color} (Prism only)
+
+   Cada bloco declara o seletor duas vezes de propósito: :host(...) serve a
+   sidebar e os overlays, que vivem em Shadow DOM; o seletor de classe ao lado
+   serve o dashboard, que é página normal. Mesma especificidade, uma fonte só.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── VOID — Clean & Minimal ─────────────────────────────────────────────── */
+
+:host(.mytube-void.mytube-dark),
+.mytube-void.mytube-dark {
+  --mt-bg-primary: #111111;
+  --mt-bg-secondary: #171717;
+  --mt-bg-elevated: #1e1e1e;
+  --mt-bg-hover: #252525;
+  --mt-text-primary: #ececec;
+  --mt-text-secondary: #737373;
+  --mt-border: #262626;
+  --mt-accent: #ececec;
+  --mt-accent-hover: #ffffff;
+  --mt-accent-soft: rgba(236, 236, 236, 0.08);
+  --mt-success: #34d399;
+  --mt-error: #f87171;
+  --mt-scrollbar-thumb: #333333;
+  --mt-scrollbar-track: transparent;
+  --mt-glass-bg: rgba(17, 17, 17, 0.92);
+  --mt-btn-bg: #1a1a1a;
+  --mt-btn-border: #2a2a2a;
+  --mt-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --mt-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --mt-shadow-glow: none;
+}
+
+:host(.mytube-void.mytube-light),
+.mytube-void.mytube-light {
+  --mt-bg-primary: #ffffff;
+  --mt-bg-secondary: #fafafa;
+  --mt-bg-elevated: #f5f5f5;
+  --mt-bg-hover: #eeeeee;
+  --mt-text-primary: #171717;
+  --mt-text-secondary: #a3a3a3;
+  --mt-border: #e5e5e5;
+  --mt-accent: #171717;
+  --mt-accent-hover: #000000;
+  --mt-accent-soft: rgba(23, 23, 23, 0.06);
+  --mt-success: #059669;
+  --mt-error: #dc2626;
+  --mt-scrollbar-thumb: #d4d4d4;
+  --mt-scrollbar-track: transparent;
+  --mt-glass-bg: rgba(255, 255, 255, 0.92);
+  --mt-btn-bg: #f5f5f5;
+  --mt-btn-border: #e5e5e5;
+  --mt-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --mt-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --mt-shadow-glow: none;
+}
+
+/* ─── PRISM — Bold & Colorful (base surfaces) ────────────────────────────── */
+
+:host(.mytube-prism.mytube-dark),
+.mytube-prism.mytube-dark {
+  --mt-bg-primary: #161219;
+  --mt-bg-secondary: #1e1922;
+  --mt-bg-elevated: #28222e;
+  --mt-bg-hover: #332b3a;
+  --mt-text-primary: #f5f0fa;
+  --mt-text-secondary: #9e8fad;
+  --mt-border: #362e3e;
+  --mt-success: #22d3a7;
+  --mt-error: #ff4d6a;
+  --mt-scrollbar-thumb: #362e3e;
+  --mt-scrollbar-track: transparent;
+  --mt-glass-bg: rgba(30, 25, 34, 0.88);
+  --mt-btn-bg: #28222e;
+  --mt-btn-border: #433a4e;
+  --mt-shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.25);
+  --mt-shadow-md: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+:host(.mytube-prism.mytube-light),
+.mytube-prism.mytube-light {
+  --mt-bg-primary: #fffaf7;
+  --mt-bg-secondary: #fff5f0;
+  --mt-bg-elevated: #ffede5;
+  --mt-bg-hover: #ffe4d9;
+  --mt-text-primary: #2d1a0e;
+  --mt-text-secondary: #9a7b6a;
+  --mt-border: #f0d8cc;
+  --mt-success: #0d9474;
+  --mt-error: #dc2044;
+  --mt-scrollbar-thumb: #e8ccbe;
+  --mt-scrollbar-track: transparent;
+  --mt-glass-bg: rgba(255, 245, 240, 0.9);
+  --mt-btn-bg: #ffede5;
+  --mt-btn-border: #f0d8cc;
+  --mt-shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.06);
+  --mt-shadow-md: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+/* ─── PRISM accent colors (dark mode) ─────────────────────────────────────── */
+
+:host(.mytube-prism.mytube-dark.mytube-accent-coral),
+.mytube-prism.mytube-dark.mytube-accent-coral {
+  --mt-accent: #ff6b42;
+  --mt-accent-hover: #ff8a66;
+  --mt-accent-soft: rgba(255, 107, 66, 0.15);
+  --mt-shadow-glow: 0 0 16px rgba(255, 107, 66, 0.25);
+}
+:host(.mytube-prism.mytube-dark.mytube-accent-teal),
+.mytube-prism.mytube-dark.mytube-accent-teal {
+  --mt-accent: #14b8a6;
+  --mt-accent-hover: #2dd4bf;
+  --mt-accent-soft: rgba(20, 184, 166, 0.15);
+  --mt-shadow-glow: 0 0 16px rgba(20, 184, 166, 0.25);
+}
+:host(.mytube-prism.mytube-dark.mytube-accent-violet),
+.mytube-prism.mytube-dark.mytube-accent-violet {
+  --mt-accent: #a855f7;
+  --mt-accent-hover: #c084fc;
+  --mt-accent-soft: rgba(168, 85, 247, 0.15);
+  --mt-shadow-glow: 0 0 16px rgba(168, 85, 247, 0.25);
+}
+:host(.mytube-prism.mytube-dark.mytube-accent-rose),
+.mytube-prism.mytube-dark.mytube-accent-rose {
+  --mt-accent: #f43f5e;
+  --mt-accent-hover: #fb7185;
+  --mt-accent-soft: rgba(244, 63, 94, 0.15);
+  --mt-shadow-glow: 0 0 16px rgba(244, 63, 94, 0.25);
+}
+:host(.mytube-prism.mytube-dark.mytube-accent-emerald),
+.mytube-prism.mytube-dark.mytube-accent-emerald {
+  --mt-accent: #10b981;
+  --mt-accent-hover: #34d399;
+  --mt-accent-soft: rgba(16, 185, 129, 0.15);
+  --mt-shadow-glow: 0 0 16px rgba(16, 185, 129, 0.25);
+}
+:host(.mytube-prism.mytube-dark.mytube-accent-gold),
+.mytube-prism.mytube-dark.mytube-accent-gold {
+  --mt-accent: #f59e0b;
+  --mt-accent-hover: #fbbf24;
+  --mt-accent-soft: rgba(245, 158, 11, 0.15);
+  --mt-shadow-glow: 0 0 16px rgba(245, 158, 11, 0.25);
+}
+
+/* ─── PRISM accent colors (light mode) ────────────────────────────────────── */
+
+:host(.mytube-prism.mytube-light.mytube-accent-coral),
+.mytube-prism.mytube-light.mytube-accent-coral {
+  --mt-accent: #e8501e;
+  --mt-accent-hover: #cc3f12;
+  --mt-accent-soft: rgba(232, 80, 30, 0.10);
+  --mt-shadow-glow: 0 0 16px rgba(232, 80, 30, 0.15);
+}
+:host(.mytube-prism.mytube-light.mytube-accent-teal),
+.mytube-prism.mytube-light.mytube-accent-teal {
+  --mt-accent: #0d9488;
+  --mt-accent-hover: #0f766e;
+  --mt-accent-soft: rgba(13, 148, 136, 0.10);
+  --mt-shadow-glow: 0 0 16px rgba(13, 148, 136, 0.15);
+}
+:host(.mytube-prism.mytube-light.mytube-accent-violet),
+.mytube-prism.mytube-light.mytube-accent-violet {
+  --mt-accent: #7c3aed;
+  --mt-accent-hover: #6d28d9;
+  --mt-accent-soft: rgba(124, 58, 237, 0.10);
+  --mt-shadow-glow: 0 0 16px rgba(124, 58, 237, 0.15);
+}
+:host(.mytube-prism.mytube-light.mytube-accent-rose),
+.mytube-prism.mytube-light.mytube-accent-rose {
+  --mt-accent: #e11d48;
+  --mt-accent-hover: #be123c;
+  --mt-accent-soft: rgba(225, 29, 72, 0.10);
+  --mt-shadow-glow: 0 0 16px rgba(225, 29, 72, 0.15);
+}
+:host(.mytube-prism.mytube-light.mytube-accent-emerald),
+.mytube-prism.mytube-light.mytube-accent-emerald {
+  --mt-accent: #059669;
+  --mt-accent-hover: #047857;
+  --mt-accent-soft: rgba(5, 150, 105, 0.10);
+  --mt-shadow-glow: 0 0 16px rgba(5, 150, 105, 0.15);
+}
+:host(.mytube-prism.mytube-light.mytube-accent-gold),
+.mytube-prism.mytube-light.mytube-accent-gold {
+  --mt-accent: #d97706;
+  --mt-accent-hover: #b45309;
+  --mt-accent-soft: rgba(217, 119, 6, 0.10);
+  --mt-shadow-glow: 0 0 16px rgba(217, 119, 6, 0.15);
+}
+
+/* ─── VOID typography + geometry ──────────────────────────────────────────── */
+
+:host(.mytube-void),
+.mytube-void {
+  --mt-font-display: 'Inter Tight', sans-serif;
+  --mt-font-body: 'Inter', sans-serif;
+  --mt-font-size-xs: 11px;
+  --mt-font-size-sm: 12px;
+  --mt-font-size-md: 13px;
+  --mt-font-size-lg: 15px;
+  --mt-font-size-xl: 17px;
+  --mt-radius-sm: 4px;
+  --mt-radius-md: 8px;
+  --mt-radius-pill: 999px;
+  --mt-transition-fast: 0.1s ease;
+  --mt-transition-normal: 0.18s ease;
+}
+
+/* ─── PRISM typography + geometry ─────────────────────────────────────────── */
+
+:host(.mytube-prism),
+.mytube-prism {
+  --mt-font-display: 'Bricolage Grotesque', sans-serif;
+  --mt-font-body: 'Plus Jakarta Sans', sans-serif;
+  --mt-font-size-xs: 11px;
+  --mt-font-size-sm: 13px;
+  --mt-font-size-md: 14px;
+  --mt-font-size-lg: 16px;
+  --mt-font-size-xl: 20px;
+  --mt-radius-sm: 8px;
+  --mt-radius-md: 14px;
+  --mt-radius-pill: 999px;
+  --mt-transition-fast: 0.12s ease;
+  --mt-transition-normal: 0.2s ease;
+}
+
+/* ─── Shared spacing ──────────────────────────────────────────────────────── */
+
+:host,
+.mytube-void,
+.mytube-prism {
+  --mt-spacing-xs: 4px;
+  --mt-spacing-sm: 8px;
+  --mt-spacing-md: 12px;
+  --mt-spacing-lg: 16px;
+  --mt-spacing-xl: 24px;
+}

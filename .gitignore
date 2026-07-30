@@ -1,0 +1,48 @@
+# ── Build e dependências ──────────────────────────────────────────────────────
+node_modules/
+dist/
+.vite/
+coverage/
+*.crx
+*.zip
+
+# ── Segredos e credenciais ────────────────────────────────────────────────────
+# Nada aqui é "por precaução": cada linha existe porque o arquivo correspondente
+# guarda credencial em claro. Um repositório público não perdoa um `git add -A`.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+auth.json
+*credentials*.json
+*secret*.json
+*token*.json
+.mt-*
+
+# ── Artefatos de verificação local ────────────────────────────────────────────
+# Scripts que dirigem um Chrome de verdade e printam a tela. Rodam contra a SUA
+# máquina e a SUA biblioteca, então o resultado é dado pessoal por construção.
+test-extension.ts
+test-ai-sidebar.ts
+test-screenshots/
+.playwright-mcp/
+*.bundle
+*.log
+
+# ── Ferramentas de agente (contexto local, não pertence ao repo) ───────────────
+.claude/
+.superpowers/
+docs/superpowers/
+graphify-out/
+.ruff_cache/
+_archive/
+
+# ── Sistema operacional e editor ──────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": [
+    "src/content/main.ts",
+    "src/content/page-bridge.ts",
+    "src/background/index.ts",
+    "src/dashboard/main.tsx"
+  ]
+}
