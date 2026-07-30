@@ -1,5 +1,6 @@
 import { h } from 'preact'
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
+import { SCRAPE_HEALTH_KEY, isUnhealthy, type ScrapeHealth } from '../../background/channel-poller'
 import { sendMessage } from '../../shared/messages'
 import type { AppState } from '../../shared/types'
 import { NowPlaying } from './sections/NowPlaying'
@@ -24,6 +25,12 @@ export function Sidebar({ onClose }: SidebarProps) {
   const [language, setLanguage] = useState<Language>('en')
   const [sectionOpen, setSectionOpen] = useState<Record<string, boolean>>({ folders: true, library: true, tags: false })
   const [newVideoCounts, setNewVideoCounts] = useState<Record<string, number>>({})
+  /**
+   * Saúde da última varredura. Sem isto, as duas falhas do scraper são mudas: o
+   * Home fica vazio e o usuário lê isso como "não há vídeo novo". O aviso é da
+   * SIDEBAR porque o console do service worker ninguém abre.
+   */
+  const [scrapeHealth, setScrapeHealth] = useState<ScrapeHealth | null>(null)
   const [folderSelectMode, setFolderSelectMode] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const scrollTimerRef = useRef<number>(0)
@@ -152,6 +159,20 @@ export function Sidebar({ onClose }: SidebarProps) {
   // Quem tem o idioma no estado usa a forma standalone; os filhos, que estão
   // DENTRO do Provider, seguem com useT().
   const t = useCallback((key: TranslationKey) => translate(key, language), [language])
+  useEffect(() => {
+    const read = () => {
+      void chrome.storage.local.get(SCRAPE_HEALTH_KEY).then(r => {
+        setScrapeHealth((r[SCRAPE_HEALTH_KEY] as ScrapeHealth | undefined) ?? null)
+      })
+    }
+    read()
+    const onChange = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+      if (area === 'local' && SCRAPE_HEALTH_KEY in changes) read()
+    }
+    chrome.storage.onChanged.addListener(onChange)
+    return () => chrome.storage.onChanged.removeListener(onChange)
+  }, [])
+
   const totalNewCount = Object.values(newVideoCounts).reduce((s, c) => s + c, 0)
 
   const sidebarStyle: h.JSX.CSSProperties = {
@@ -276,6 +297,17 @@ export function Sidebar({ onClose }: SidebarProps) {
     margin: '2px 0',
   }
 
+  const scrapeWarnStyle: h.JSX.CSSProperties = {
+    margin: '0 12px 8px',
+    padding: '10px 12px',
+    borderRadius: 'var(--mt-radius-md)',
+    border: '1px solid var(--mt-error)',
+    backgroundColor: 'rgba(248, 113, 113, 0.08)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '3px',
+  }
+
   const footerStyle: h.JSX.CSSProperties = {
     padding: '10px 16px 14px',
     borderTop: '1px solid var(--mt-border)',
@@ -362,6 +394,23 @@ export function Sidebar({ onClose }: SidebarProps) {
             <div style={loadingStyle}>{t('sidebar.loading')}</div>
           ) : (
             <>
+              {/* Antes de qualquer conteúdo: se o scraper quebrou, o resto da tela
+                  está mentindo por omissão — lista vazia parece "nada novo". */}
+              {scrapeHealth && isUnhealthy(scrapeHealth) && (
+                <div style={scrapeWarnStyle}>
+                  <strong style={{ fontSize: 'var(--mt-font-size-sm)', color: 'var(--mt-error)' }}>
+                    ⚠ {scrapeHealth.undatedChannels > scrapeHealth.emptyChannels
+                      ? t('scrape.undatedTitle')
+                      : t('scrape.brokeTitle')}
+                  </strong>
+                  <span style={{ fontSize: 'var(--mt-font-size-xs)', color: 'var(--mt-text-secondary)' }}>
+                    {scrapeHealth.undatedChannels > scrapeHealth.emptyChannels
+                      ? t('scrape.undatedBody')
+                      : t('scrape.brokeBody')}
+                  </span>
+                </div>
+              )}
+
               {showNowPlaying && (
                 <NowPlaying appState={appState} onStateChange={handleStateChange} />
               )}

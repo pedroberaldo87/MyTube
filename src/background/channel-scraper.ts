@@ -12,7 +12,13 @@ export interface RawFeedEntry {
 const videoCache = new Map<string, { entries: RawFeedEntry[]; fetchedAt: number }>()
 const CACHE_TTL = 10 * 60 * 1000
 
-function extractYtInitialData(html: string): unknown | null {
+/**
+ * Exportados para teste. O caminho HTML -> ytInitialData -> lockup -> vídeo é a
+ * parte do projeto que quebra primeiro quando o YouTube muda a página, e era a
+ * única sem nenhuma cobertura: `fetchChannelVideos` faz rede e não dá para rodar
+ * em CI, mas o parser sozinho é pura transformação de dado.
+ */
+export function extractYtInitialData(html: string): unknown | null {
   const markers = ['var ytInitialData = ', 'window["ytInitialData"] = ', "window['ytInitialData'] = "]
   for (const marker of markers) {
     const idx = html.indexOf(marker)
@@ -39,7 +45,7 @@ function extractYtInitialData(html: string): unknown | null {
   return null
 }
 
-function parseRelativeDate(text: string): number {
+export function parseRelativeDate(text: string): number {
   const enMatch = text.match(/(\d+)\s*(second|minute|hour|day|week|month|year)s?\s*ago/i)
   if (enMatch) {
     const n = parseInt(enMatch[1])
@@ -65,7 +71,7 @@ function parseRelativeDate(text: string): number {
   return 0
 }
 
-interface VideoEntry {
+export interface VideoEntry {
   videoId: string
   title: string
   publishedText: string
@@ -165,7 +171,7 @@ function extractVideoFromLockup(vm: Record<string, unknown>): VideoEntry | null 
   return { videoId, title, publishedText, thumbnailUrl, viewCount, duration }
 }
 
-function deepFindVideos(obj: unknown, results: VideoEntry[], depth = 0): void {
+export function deepFindVideos(obj: unknown, results: VideoEntry[], depth = 0): void {
   if (depth > 25 || !obj || typeof obj !== 'object') return
 
   const record = obj as Record<string, unknown>

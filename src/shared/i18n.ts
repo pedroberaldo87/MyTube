@@ -328,6 +328,21 @@ const translations = {
   },
   'perm.allow': { en: 'Allow', 'pt-BR': 'Permitir' },
 
+  // Aviso de saúde do scraper — ver channel-poller.ts → ScrapeHealth
+  'scrape.brokeTitle': {
+    en: "Could not read your channels' pages",
+    'pt-BR': 'Não consegui ler as páginas dos seus canais',
+  },
+  'scrape.brokeBody': {
+    en: 'YouTube may have changed its page format. New videos will not appear until this is fixed.',
+    'pt-BR': 'O YouTube pode ter mudado o formato das páginas. Vídeos novos não vão aparecer até isso ser corrigido.',
+  },
+  'scrape.undatedTitle': { en: "Could not read the videos' dates", 'pt-BR': 'Não consegui ler as datas dos vídeos' },
+  'scrape.undatedBody': {
+    en: 'MyTube reads dates in English and Portuguese only. With your YouTube account in another language, new videos cannot be detected.',
+    'pt-BR': 'O MyTube lê datas só em inglês e português. Com sua conta do YouTube em outro idioma, não dá para detectar vídeos novos.',
+  },
+
   'ai.sectionTitle': { en: 'AI', 'pt-BR': 'IA' },
   'ai.useThis': { en: 'Use this provider', 'pt-BR': 'Usar este provedor' },
 

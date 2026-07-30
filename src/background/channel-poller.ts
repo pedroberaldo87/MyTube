@@ -150,6 +150,44 @@ export async function pollNewVideos(): Promise<void> {
  *
  * O `fetcher` é injetável só para o teste poder medir concorrência sem rede.
  */
+/**
+ * Diagnóstico da última varredura. Existe porque as duas falhas do scraper são
+ * MUDAS: o Home fica vazio e isso é indistinguível de "não há vídeo novo".
+ *
+ * - `emptyChannels`: o parser não achou vídeo nenhum. Sinal de que a página do
+ *   YouTube mudou de formato.
+ * - `undatedChannels`: achou vídeos, mas não entendeu a data de NENHUM. Como
+ *   `publishedAt` vira 0 e a regra de "novo" exige data acima do piso de 7 dias,
+ *   esses vídeos nunca aparecem. É o que acontece com conta cujo idioma não é
+ *   inglês nem português — o YouTube ignora Accept-Language para conta logada.
+ */
+export interface ScrapeHealth {
+  checkedAt: number
+  total: number
+  emptyChannels: number
+  undatedChannels: number
+}
+
+export const SCRAPE_HEALTH_KEY = 'mytube-scrape-health'
+
+/** Só grita quando a falha é do conjunto, não de um canal que saiu do ar. */
+const UNHEALTHY_RATIO = 0.6
+
+export function diagnose(byChannel: Map<string, RawFeedEntry[]>): ScrapeHealth {
+  let emptyChannels = 0
+  let undatedChannels = 0
+  for (const entries of byChannel.values()) {
+    if (entries.length === 0) { emptyChannels++; continue }
+    if (entries.every(e => e.publishedAt === 0)) undatedChannels++
+  }
+  return { checkedAt: Date.now(), total: byChannel.size, emptyChannels, undatedChannels }
+}
+
+export function isUnhealthy(h: ScrapeHealth): boolean {
+  if (h.total < 3) return false
+  return (h.emptyChannels + h.undatedChannels) / h.total >= UNHEALTHY_RATIO
+}
+
 export async function fetchChannelsBatched(
   channels: PollableChannel[],
   fetcher: typeof fetchChannelVideos = fetchChannelVideos,
@@ -162,6 +200,9 @@ export async function fetchChannelsBatched(
     )
     batch.forEach((ch, k) => byChannel.set(ch.youtubeId, results[k] ?? []))
   }
+  // Gravado a cada varredura: a sidebar lê e avisa na tela. O console do service
+  // worker não serve — ninguém abre.
+  await chrome.storage.local.set({ [SCRAPE_HEALTH_KEY]: diagnose(byChannel) })
   return byChannel
 }
 
