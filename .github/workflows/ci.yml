@@ -5,22 +5,25 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '20'
           cache: npm
 
       - run: npm ci
 
-      # Seis dos testes sobem um Chromium de verdade e afirmam sobre o que e
-      # renderizado. Sem o browser instalado eles falham na primeira linha, entao
-      # isto nao e opcional — e o que faz a suite valer em CI o mesmo que vale local.
+      # Six of the tests launch a real Chromium and assert on what is rendered.
+      # Without the browser installed they fail on their first line, so this step
+      # is what makes the suite mean the same thing in CI as it does locally.
       - run: npx playwright install --with-deps chromium
 
       - run: npm run typecheck
