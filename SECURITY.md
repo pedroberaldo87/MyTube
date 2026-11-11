@@ -22,7 +22,7 @@ MyTube runs entirely in your browser. There is no server, no account and no back
 
 **In scope:**
 
-- Leaking the API key or OAuth tokens stored under `mytube-ai-providers` — for example a code path that lets them cross a message response, or reach a page script, or land in a log
+- Leaking the API key or OAuth tokens stored in the extension's IndexedDB (`aiConfig` store) — for example a code path that lets them cross a message response, or reach a page script, or land in a log
 - Any way a page (including youtube.com itself) reaches MyTube's data or drives its messaging from the outside
 - Content injected by a channel name, playlist name or video title being executed rather than displayed
 - Getting the extension to talk to a host the user never granted, or to widen an already-granted permission
@@ -42,9 +42,11 @@ MyTube runs entirely in your browser. There is no server, no account and no back
 
 ## Credential handling in this project
 
-Two invariants the code is built on. Breaking either is a vulnerability, not a design change:
+Four invariants the code is built on. Breaking any of them is a vulnerability, not a design change:
 
 1. **Credentials never cross a message response.** `sanitizeProvider` in `src/shared/ai/storage.ts` replaces `apiKey` and OAuth `tokens` with a `hasCredential` boolean before anything leaves the service worker. The sidebar has never held a credential and must never need to.
 2. **A save is a merge, never a replace.** Because the UI only ever holds the sanitized form, a save coming from it arrives with no credential. `AI_SAVE_PROVIDER` preserves what is stored; replacing the whole record would wipe the credential on every model change.
+3. **Credentials live where youtube.com scripts cannot read them.** API keys and ChatGPT tokens are stored in the extension-origin IndexedDB (`aiConfig` store in `src/shared/db.ts`), never in `chrome.storage.local`, which content scripts can read directly. A legacy `mytube-ai-providers` record in `chrome.storage.local` is migrated once on the first run after the update and deleted; after that it is deleted on sight and never imported. An API key is typed only in the extension window `src/aikey/`, never in the sidebar, and `AI_SAVE_PROVIDER` rejects a payload carrying a credential unless it comes from an extension page.
+4. **A credential is bound to its destination.** The worker, not the form, enforces it: changing the `baseUrl` of a saved provider drops its stored key and model unless the same save carries a new key; `openai-oauth` providers are pinned to `OPENAI_OAUTH_BASE_URL`; and an explicit `http://` endpoint is accepted only for loopback and private hosts.
 
-Both are covered by tests in `test/`.
+All four are covered by tests in `test/`.

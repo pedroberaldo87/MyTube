@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import 'fake-indexeddb/auto'
 
 // INVARIANTE: token renovado é persistido. Depois de uma renovação o store contém o
 // novo accessToken/refreshToken/obtainedAt, e a chamada seguinte dentro da janela de
@@ -47,6 +48,7 @@ globalThis.chrome = {
       // chrome.storage serializa: o handler nunca recebe a referência do store.
       async get(key) { return key in store ? { [key]: structuredClone(store[key]) } : {} },
       async set(obj) { for (const [k, v] of Object.entries(obj)) store[k] = structuredClone(v) },
+      async remove(key) { delete store[key] },
     },
   },
 }
@@ -75,6 +77,9 @@ globalThis.fetch = async (url, init = {}) => {
 }
 
 await import('../src/background/index.ts')
+// A config mora no IndexedDB da extensão (ver test/ai-credential-storage.test.mjs); o
+// store acima só serve de origem para a migração da chave antiga.
+const { getAIConfig } = await import('../src/shared/ai/storage.ts')
 assert.equal(typeof listener, 'function', 'o roteador não registrou chrome.runtime.onMessage')
 
 function send(message) {
@@ -87,7 +92,7 @@ assert.deepEqual(models, ['gpt-5'], 'AI_LIST_MODELS não devolveu os modelos do 
 assert.equal(tokenPosts, 1, 'não renovou o token expirado')
 assert.deepEqual(modelAuthHeaders, ['Bearer AT-NOVO'], 'chamou /models sem o token renovado')
 
-const saved = store[AI_KEY].providers[0].tokens
+const saved = (await getAIConfig()).providers[0].tokens
 assert.equal(saved.accessToken, 'AT-NOVO', 'access_token renovado não foi persistido no store')
 assert.equal(
   saved.refreshToken, 'RT-ROTACIONADO',
@@ -112,10 +117,10 @@ assert.deepEqual(
 )
 
 // 3. o provedor persistido não perde os outros campos
-const provider = store[AI_KEY].providers[0]
+const provider = (await getAIConfig()).providers[0]
 assert.equal(provider.id, 'p1')
 assert.equal(provider.label, 'ChatGPT')
 assert.equal(provider.kind, 'openai-oauth')
-assert.equal(store[AI_KEY].activeProviderId, 'p1')
+assert.equal((await getAIConfig()).activeProviderId, 'p1')
 
 console.log('✓ ai-oauth-refresh-persist: 13 asserções passaram')

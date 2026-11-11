@@ -120,7 +120,12 @@ export type MessageType =
   | { type: 'GET_HOME_NUDGE_DATA'; payload?: undefined }
   | { type: 'REMOVE_WATCH_ENTRY'; payload: { videoId: string } }
   | { type: 'AI_LIST_PROVIDERS'; payload?: undefined }
-  | { type: 'AI_SAVE_PROVIDER'; payload: AIProvider }
+  // `model` ausente = preservar o gravado (a página de chave não conhece o modelo
+  // corrente e não deve regravar um snapshot velho dele).
+  // `intent: 'create'` is the only way a save may introduce an id the worker does
+  // not know; without it, an unknown id is rejected (a removed provider must not
+  // come back because a key window that was open at the time pressed Save).
+  | { type: 'AI_SAVE_PROVIDER'; payload: Omit<AIProvider, 'model'> & { model?: string | null; intent?: 'create' } }
   | { type: 'AI_DELETE_PROVIDER'; payload: { id: string } }
   | { type: 'AI_SET_ACTIVE_PROVIDER'; payload: { id: string | null } }
   | { type: 'AI_TEST_PROVIDER'; payload: { id: string } }
@@ -135,6 +140,9 @@ export type MessageType =
   | { type: 'AI_REQUEST_HOST_PERMISSION'; payload: { url: string } }
   // Desfecho vindo da janelinha, que sabe o requestId por estar na sua URL.
   | { type: 'AI_HOST_PERMISSION_RESULT'; payload: { requestId: string; outcome: PermissionOutcome } }
+  // A sidebar não digita chave: este pedido abre a página da extensão que digita.
+  // `id` = editar o provedor (chave nova ou endereço); null = adicionar um.
+  | { type: 'AI_OPEN_KEY_PAGE'; payload: { id: string | null } }
   | { type: 'OPEN_OPTIONS_PAGE'; payload?: undefined }
 
 /**
@@ -151,6 +159,8 @@ export type MessageResponse<T extends MessageType['type']> =
   T extends 'GET_HOME_FEED' ? HomeFeedFolder[] :
   T extends 'GET_HOME_NUDGE_DATA' ? HomeNudgeData :
   T extends 'AI_LIST_PROVIDERS' ? AIConfigPublic :
+  T extends 'AI_SAVE_PROVIDER' ? { ok: boolean; error?: string } :
+  T extends 'AI_OPEN_KEY_PAGE' ? { ok: boolean; error?: string } :
   T extends 'AI_TEST_PROVIDER' ? { ok: boolean; error?: string; latencyMs?: number; modelCount?: number } :
   T extends 'AI_LIST_MODELS' ? string[] :
   T extends 'AI_OAUTH_BEGIN' ? AIOAuthBeginResponse :

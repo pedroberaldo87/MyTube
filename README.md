@@ -129,7 +129,7 @@ Filing hundreds of subscriptions by hand is the boring part. Connect a model and
 **Connecting.** Open the sidebar, click the gear, then go to **AI**. Two options:
 
 - **Your ChatGPT account**: approve a device code on openai.com. No API key involved.
-- **Any OpenAI-compatible endpoint**: your own base URL and key. A local Ollama, LM Studio, vLLM, OpenRouter, or OpenAI itself. Chrome asks for permission to that host when you save it.
+- **Any OpenAI-compatible endpoint**: your own base URL and key. A local Ollama, LM Studio, vLLM, OpenRouter, or OpenAI itself. **Add endpoint** opens a separate MyTube window, so the key is typed there and never on the YouTube page. Chrome asks for permission to that host when you save it. Plain `http://` is accepted only for this computer and private networks (localhost, 192.168.x.x, 10.x.x.x, Tailscale); any other server needs `https://`. Changing a saved endpoint's address removes its saved key and model, so type the key again.
 
 Then use **Test connection** to pick a model.
 
@@ -163,7 +163,8 @@ Chrome shows a broad-sounding list. Here is what each entry is for and what is *
 
 - **Content scripts** (`src/content/`) inject the sidebar and feed overlays into youtube.com, built with Preact inside Shadow DOM roots. A small MAIN-world script (`page-bridge.ts`) reads YouTube's own page data.
 - **Service worker** (`src/background/`) owns storage access, polls channel pages for new uploads every 30 minutes via an alarm, and makes all AI calls. Credentials never leave it.
-- **Storage**: folders, tags and library items in `chrome.storage.local`; watch history and new-video checks in IndexedDB (via `idb`).
+- **API key window** (`src/aikey/`) is an extension page, opened as a small popup window. It is the only place an API key is typed.
+- **Storage**: folders, tags and library items in `chrome.storage.local`; watch history, new-video checks and the AI providers (with their API keys and ChatGPT tokens) in the extension's IndexedDB (via `idb`). Scripts on youtube.com can read `chrome.storage.local` but cannot open the extension's IndexedDB, which is why the credentials live there.
 - **Dashboard** (`src/dashboard/`) is the extension's options page.
 - `build.ts` is the real build entry point (`vite.config.ts` only serves `npm run dev`). It bundles each part separately and writes `dist/manifest.json`.
 

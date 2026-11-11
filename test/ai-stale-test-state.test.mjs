@@ -3,46 +3,29 @@ import esbuild from 'esbuild'
 import { chromium } from 'playwright'
 
 // INVARIANTE: resultado de teste e lista de modelos são derivados do ENDEREÇO (e
-// da credencial), não do id do provedor. Depois de salvar uma edição, a tela não
-// afirma "Conectado" sobre um endpoint que nunca foi testado, nem oferece modelo
-// vindo de outro servidor.
+// da credencial), não do id do provedor. Depois de uma edição, a tela não afirma
+// "Conectado" sobre um endpoint que nunca foi testado, nem oferece modelo vindo de
+// outro servidor.
 //
-// Caminho concreto: `testing` e `models` são mapas indexados por p.id. O humano
-// testa o provedor (a linha passa a dizer "Connected · 42 ms" e ganha o combo de
-// modelos daquele servidor), depois clica em Editar, troca o Base URL e Salva.
-// O id não muda, então as duas entradas sobrevivem: a linha continua afirmando
-// conectividade de um endereço que nunca foi alcançado, e o combo continua
-// oferecendo modelos do servidor antigo — escolher um manda um AI_SAVE_PROVIDER
-// com modelo que o novo endpoint pode não ter.
+// Endereço e chave são editados na janela de chave da EXTENSÃO (src/aikey/), não
+// na sidebar. O id sobrevive à edição, então `testing` e `models` (indexados por
+// id) sobreviveriam também: ao voltar o foco para a sidebar depois de abrir a
+// janela para um provedor, o que foi medido para ele é descartado. O modelo, que
+// foi escolhido numa lista do endpoint antigo, é zerado pelo worker quando o
+// endereço muda (test/ai-credential-binding.test.mjs); o mock abaixo reproduz isso.
 //
-// O MODELO é derivado do endereço pelo mesmo motivo: ele foi escolhido numa lista
-// que o endpoint antigo devolveu. Nenhum AI_SAVE_PROVIDER pode gravar um modelo
-// medido em outro endpoint, e a linha nunca pode exibir `novoEndereço · modeloAntigo`
-// como configuração válida. Mas editar SEM trocar o endereço preserva o modelo:
-// mandar null sempre desconfiguraria o provedor a cada troca de rótulo.
-//
-// A escrita TARDIA se identifica ANTES de pintar: não basta limpar no save, porque
-// quem responde primeiro não é combinado. Com um Testar em voo, a limpeza do save
-// acontece e SÓ DEPOIS a resposta antiga chega — e volta a escrever "Conectado" e
-// o combo do servidor anterior por cima do endereço novo. Invalidar por ordem de
-// chegada é frágil; a invalidação é por IDENTIDADE (geração por id).
+// A escrita TARDIA se identifica ANTES de pintar: com um Testar em voo, a limpeza
+// acontece e SÓ DEPOIS a resposta antiga chega. A invalidação é por IDENTIDADE
+// (geração por id), não por ordem de chegada.
 //
 // Cinco metades:
-//  A. salvar uma edição que troca o endereço zera "Conectado", o combo e o MODELO
-//     daquela linha (na tela e no payload que vai ao background).
-//  B. a limpeza é POR id: a linha do outro provedor, testada antes, fica intacta
-//     (um fix que zerasse os mapas inteiros passaria em A e falharia aqui).
-//  C. sem comparar strings: salvar edição que muda só a CHAVE também zera o
-//     "Conectado" — foi medido com a credencial antiga — mas o endereço é o mesmo,
-//     então o MODELO continua com dono e é preservado.
-//  D. escrita tardia: um Testar disparado ANTES do save (mock com latência sob
-//     controle do teste) não ressuscita "Conectado" nem o combo depois que o save
-//     trocou o endereço.
-//  E. a recíproca: um Testar disparado DEPOIS do save pinta normalmente — um fix
-//     que simplesmente parasse de pintar passaria em D e falharia aqui.
+//  A. a janela salvou outro endereço: "Conectado", o combo e o MODELO daquela linha somem.
+//  B. a limpeza é POR id: a linha do outro provedor, testada antes, fica intacta.
+//  C. a janela salvou só uma chave nova (mesmo endereço): o "Conectado" some, o modelo fica.
+//  D. escrita tardia: um Testar disparado ANTES não ressuscita "Conectado" nem o combo.
+//  E. a recíproca: um Testar disparado DEPOIS pinta normalmente.
 //
-// Medido no Chromium real, com o componente REAL e o Preact real fazendo o diff:
-// leitura de código não mostra o que sobra na tela depois do save.
+// Medido no Chromium real, com o componente REAL e o Preact real fazendo o diff.
 
 const ROOT = new URL('..', import.meta.url).pathname
 const { t } = await import('../src/shared/i18n.ts')
@@ -89,6 +72,14 @@ try {
     window.__providers = [p1, p2]
     window.__activeId = null
     window.__saves = []
+    window.__opened = []
+    // A janela de chave salvou algo (o que o worker faz): troca o registro e devolve o foco à sidebar.
+    window.__keyWindowSaved = (id, patch) => {
+      const i = window.__providers.findIndex(p => p.id === id)
+      const addressChanged = patch.baseUrl !== undefined && patch.baseUrl !== window.__providers[i].baseUrl
+      window.__providers[i] = { ...window.__providers[i], ...patch, ...(addressChanged ? { model: null } : {}) }
+      window.dispatchEvent(new Event('focus'))
+    }
     // Latência do AI_TEST_PROVIDER sob controle do teste: `null` = instantâneo (A,
     // B, C), promise = fica em voo até o teste liberar (D). O contador diz quando a
     // resposta JÁ voltou ao componente, então não se espera por tempo de parede.
@@ -106,14 +97,8 @@ try {
             return { ok: true, latencyMs: 42 }
           }
           if (msg.type === 'AI_LIST_MODELS') return models.slice()
-          if (msg.type === 'AI_SAVE_PROVIDER') {
-            window.__saves.push(msg.payload)
-            const i = window.__providers.findIndex(p => p.id === msg.payload.id)
-            if (i !== -1) {
-              window.__providers[i] = { ...window.__providers[i], ...msg.payload, hasCredential: true }
-            }
-            return { ok: true }
-          }
+          if (msg.type === 'AI_SAVE_PROVIDER') window.__saves.push(msg.payload)
+          if (msg.type === 'AI_OPEN_KEY_PAGE') window.__opened.push(msg.payload.id)
           return { ok: true }
         },
       },
@@ -179,20 +164,16 @@ try {
     'o combo de modelos não apareceu depois do teste — o cenário não foi reproduzido',
   )
 
-  // ── A. edição que troca o endereço zera resultado e modelos ────────────────
+  // ── A. a janela de chave salvou outro endereço ─────────────────────────────
   await clickInRow('Meu servidor', t('ai.edit', 'en'))
   await settle()
+  assert.deepEqual(await page.evaluate(() => window.__opened), ['p1'], 'Editar não abriu a janela de chave desse provedor')
   const NOVO = 'http://10.0.0.7:9000/v1'
-  await page.fill('input:not([type=radio]) >> nth=1', NOVO)
-  await clickButton(t('ai.save', 'en'))
-  await page.waitForFunction(() => document.querySelectorAll('input:not([type=radio])').length === 0)
+  await page.evaluate(novo => window.__keyWindowSaved('p1', { baseUrl: novo }), NOVO)
+  await page.waitForFunction(() => document.getElementById('app').innerText.includes('10.0.0.7:9000'))
   await settle()
 
   const depois = await rowState('Meu servidor')
-  assert.ok(
-    depois.text.includes('10.0.0.7:9000'),
-    `o save não trocou o endereço da linha — o cenário não foi reproduzido:\n${depois.text}`,
-  )
   assert.equal(
     depois.text.includes(OK), false,
     'a linha continua afirmando "Conectado" depois de trocar o endereço: o resultado é de um ' +
@@ -203,21 +184,12 @@ try {
     `o combo de modelos do servidor ANTIGO ficou na tela depois de apontar para outro endereço: ` +
     `escolher um manda AI_SAVE_PROVIDER com modelo que o novo endpoint pode não ter (${depois.options.join(', ')})`,
   )
-  const salvoA = await page.evaluate(() => window.__saves.at(-1))
-  assert.equal(
-    salvoA.baseUrl, NOVO,
-    'o payload do save não levou o endereço novo — o cenário A não foi reproduzido',
-  )
-  assert.equal(
-    salvoA.model, null,
-    `o AI_SAVE_PROVIDER gravou o modelo "${salvoA.model}" junto do endereço novo: aquele modelo foi ` +
-    'escolhido numa lista que o endpoint ANTIGO devolveu, e o novo pode não tê-lo',
-  )
   assert.equal(
     depois.text.includes(P1.model), false,
     `a linha exibe "${NOVO} · ${P1.model}" como configuração válida: o endereço é novo e o modelo é ` +
     `do servidor anterior:\n${depois.text}`,
   )
+  assert.deepEqual(await page.evaluate(() => window.__saves), [], 'a sidebar gravou algo por conta própria')
 
   // ── B. a limpeza é por id: a outra linha fica intacta ──────────────────────
   const outro = await rowState('Outro')
@@ -231,38 +203,26 @@ try {
     'salvar a edição de um provedor apagou o combo de modelos do OUTRO',
   )
 
-  // ── C. sem comparar strings: mudar só a chave também invalida ──────────────
+  // ── C. só a chave mudou (mesmo endereço) ───────────────────────────────────
   await clickInRow('Outro', t('ai.edit', 'en'))
   await settle()
-  await page.fill('input:not([type=radio]) >> nth=2', 'sk-chave-nova')
-  await clickButton(t('ai.save', 'en'))
-  await page.waitForFunction(() => document.querySelectorAll('input:not([type=radio])').length === 0)
+  await page.evaluate(() => window.__keyWindowSaved('p2', { label: 'Outro' }))
   await settle()
 
-  const salvos = await page.evaluate(() => window.__saves.at(-1))
-  assert.equal(
-    salvos.apiKey, 'sk-chave-nova',
-    'o save não levou a chave nova — o cenário C não foi reproduzido',
-  )
-  assert.equal(
-    salvos.baseUrl, P2.baseUrl,
-    'o save de C mexeu no endereço — o cenário (editar sem trocar de endereço) não foi reproduzido',
-  )
-  assert.equal(
-    salvos.model, P2.model,
-    'editar sem trocar o endereço apagou o modelo: o modelo continua com dono, e mandar null aqui ' +
-    'desconfigura o provedor a cada troca de rótulo ou de chave',
-  )
   const outroDepois = await rowState('Outro')
   assert.equal(
     outroDepois.text.includes(OK), false,
-    'a linha continua afirmando "Conectado" depois de trocar a CREDENCIAL: aquele resultado foi ' +
+    'a linha continua afirmando "Conectado" depois de a janela de chave salvar: aquele resultado foi ' +
     `medido com a chave antiga:\n${outroDepois.text}`,
   )
   assert.equal(
     outroDepois.selects, 0,
     'o combo de modelos sobreviveu à troca de credencial: a lista veio de uma sessão autenticada ' +
     'com a chave anterior',
+  )
+  assert.ok(
+    outroDepois.text.includes(P2.model),
+    'editar sem trocar o endereço apagou o modelo: o modelo continua com dono',
   )
 
   // ── D. escrita TARDIA: a resposta do teste chega DEPOIS do save ─────────────
@@ -290,9 +250,8 @@ try {
   await clickInRow('Meu servidor', t('ai.edit', 'en'))
   await settle()
   const NOVISSIMO = 'http://172.16.0.5:7000/v1'
-  await page.fill('input:not([type=radio]) >> nth=1', NOVISSIMO)
-  await clickButton(t('ai.save', 'en'))
-  await page.waitForFunction(() => document.querySelectorAll('input:not([type=radio])').length === 0)
+  await page.evaluate(novo => window.__keyWindowSaved('p1', { baseUrl: novo }), NOVISSIMO)
+  await page.waitForFunction(() => document.getElementById('app').innerText.includes('172.16.0.5:7000'))
   await settle()
 
   // agora a resposta antiga volta
@@ -303,7 +262,7 @@ try {
   const tardio = await rowState('Meu servidor')
   assert.ok(
     tardio.text.includes('172.16.0.5:7000'),
-    `o save de D não trocou o endereço da linha — o cenário não foi reproduzido:\n${tardio.text}`,
+    `a janela de D não trocou o endereço da linha — o cenário não foi reproduzido:\n${tardio.text}`,
   )
   assert.equal(
     tardio.text.includes(OK), false,

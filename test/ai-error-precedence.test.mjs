@@ -3,7 +3,7 @@ import esbuild from 'esbuild'
 import { chromium } from 'playwright'
 
 // INVARIANTE: nenhuma ação da UI exibe NEM ENGOLE o erro de outra. Com um device
-// flow que morreu e um erro de formulário na tela, os DOIS motivos ficam
+// flow que morreu e um erro de ação (a janela de chave que não abriu) na tela, os DOIS motivos ficam
 // visíveis, cada um ao lado do seu dono — e o painel do código nunca desaparece
 // sem dizer por quê.
 //
@@ -110,7 +110,7 @@ await vivo
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { t } = await import('../src/shared/i18n.ts')
-const INVALID_URL = t('ai.errInvalidUrl', 'en')
+const OPEN_FAIL = t('ai.errCannotOpenKeyPage', 'en')
 const USER_CODE = 'WXYZ-9999'
 
 // O componente é bundlado a partir do fonte REAL: um teste que reimplementasse a
@@ -151,6 +151,8 @@ try {
         async sendMessage(msg) {
           if (msg.type === 'AI_LIST_PROVIDERS') return { providers: [], activeProviderId: null }
           if (msg.type === 'AI_OAUTH_BEGIN') return { ...start }
+          // A janela de chave não abre: é o erro "da ação" que disputa a tela com o do fluxo.
+          if (msg.type === 'AI_OPEN_KEY_PAGE') return { ok: false, error: 'cannot-open' }
           return { ok: true }
         },
       },
@@ -190,16 +192,14 @@ try {
     USER_CODE,
   )
 
-  // ── B2. enquanto espera aprovação, tenta cadastrar um endpoint e erra ───────
+  // ── B2. enquanto espera aprovação, tenta adicionar um endpoint e a janela não abre ───────
   await clickButton(t('ai.addEndpoint', 'en'))
-  await settle()
-  await clickButton(t('ai.save', 'en'))
   await settle()
 
   const esperando = await screen()
   assert.ok(
-    esperando.includes(INVALID_URL),
-    `o save com endereço vazio não mostrou erro nenhum — o teste não chegou a reproduzir nada:\n${esperando}`,
+    esperando.includes(OPEN_FAIL),
+    `abrir a janela de chave falhou e não mostrou erro nenhum — o teste não chegou a reproduzir nada:\n${esperando}`,
   )
   assert.ok(
     esperando.includes(USER_CODE),
@@ -221,12 +221,12 @@ try {
   )
   assert.ok(
     depois.includes('HTTP 500'),
-    'o painel do código desapareceu SEM dizer por quê: o erro da ação do formulário engoliu o ' +
+    'o painel do código desapareceu SEM dizer por quê: o erro da ação engoliu o ' +
     `motivo do device flow, e o usuário fica olhando o lugar onde estava o código:\n${depois}`,
   )
   assert.ok(
-    depois.includes(INVALID_URL),
-    'o motivo do device flow engoliu o erro do formulário: o campo continua inválido na tela e ' +
+    depois.includes(OPEN_FAIL),
+    'o motivo do device flow engoliu o erro da ação: a janela de chave continua sem abrir e ' +
     `ninguém mais diz isso:\n${depois}`,
   )
 } finally {

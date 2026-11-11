@@ -113,7 +113,23 @@ async function buildExtension() {
     },
   } satisfies InlineConfig)
 
-  // 6. Copy static assets
+  // 6. API key window — extension-origin page where keys are typed (never the sidebar)
+  console.log('\n📦 Building API key window...')
+  await build({
+    configFile: false,
+    root: resolve(root, 'src/aikey'),
+    base: './',
+    plugins: [],
+    build: {
+      outDir: resolve(outDir, 'aikey'),
+      emptyOutDir: true,
+    },
+    define: {
+      'process.env.NODE_ENV': '"production"',
+    },
+  } satisfies InlineConfig)
+
+  // 7. Copy static assets
   console.log('\n📋 Copying static assets...')
   const iconsOut = resolve(outDir, 'icons')
   if (!existsSync(iconsOut)) mkdirSync(iconsOut, { recursive: true })
@@ -124,7 +140,7 @@ async function buildExtension() {
     )
   }
 
-  // 7. Write manifest.json
+  // 8. Write manifest.json
   const manifest = {
     manifest_version: 3,
     name: 'MyTube',

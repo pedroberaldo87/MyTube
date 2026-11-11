@@ -1,6 +1,6 @@
 import { h } from 'preact'
 import { useRef, useState } from 'preact/hooks'
-import { exportWatchHistory, importWatchHistory } from '../../../shared/db'
+import { exportWatchHistory, importWatchHistory, replaceWatchHistory } from '../../../shared/db'
 import { sendMessage } from '../../../shared/messages'
 import type { AppState, WatchEntry } from '../../../shared/types'
 import { useT } from '../../../shared/i18n'
@@ -126,19 +126,10 @@ export function ExportImport({ onStateChange }: ExportImportProps) {
       const { state, watchHistory, dropped } = pendingBackup
 
       if (mode === 'replace') {
-        // Overwrite state entirely
+        // The database step goes first and is atomic: if it fails, mytube_state is
+        // still the user's own, not a half-restore.
+        await replaceWatchHistory(watchHistory)
         await chrome.storage.local.set({ mytube_state: state })
-        // Clear existing watch history then import
-        const db = await import('../../../shared/db')
-        // importWatchHistory only adds; clear store first by reading existing and using a fresh db call
-        // We use a workaround: clear via indexedDB directly via idb
-        const { openDB } = await import('idb')
-        const rawDb = await openDB('mytube', 1)
-        const tx = rawDb.transaction('watchHistory', 'readwrite')
-        await tx.store.clear()
-        await tx.done
-        rawDb.close()
-        await db.importWatchHistory(watchHistory)
       } else {
         // Merge: get current state, merge organizables by youtubeId
         const currentState = await sendMessage({ type: 'GET_STATE' })

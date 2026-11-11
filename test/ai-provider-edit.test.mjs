@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import 'fake-indexeddb/auto'
 
 // INVARIANTE: editar um provedor sem digitar a chave preserva a credencial
 // guardada. A UI só tem a forma sanitizada, então um save vindo dela chega sem
@@ -24,6 +25,7 @@ globalThis.chrome = {
     local: {
       get: async key => (typeof key === 'string' ? { [key]: store[key] } : { ...store }),
       set: async obj => { Object.assign(store, obj) },
+      remove: async key => { delete store[key] },
     },
   },
 }
