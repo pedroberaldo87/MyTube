@@ -7,6 +7,7 @@ import { QuickTag } from '../QuickTag'
 import { NewBadge } from './NewBadge'
 import { useT } from '../../../shared/i18n'
 import { flattenFolders } from '../../../shared/folders'
+import { safeImageSrc, safeYouTubeHref } from '../../../shared/backup-validate'
 
 interface LibraryItemProps {
   item: Organizable
@@ -305,8 +306,8 @@ export function LibraryItem({ item, folders, tags, onRefresh, newCount, onMarkRe
       )}
 
       <div style={{ position: 'relative', flexShrink: 0 }}>
-        {item.thumbnailUrl ? (
-          <img src={item.thumbnailUrl} alt="" style={thumbStyle} />
+        {safeImageSrc(item.thumbnailUrl) ? (
+          <img src={safeImageSrc(item.thumbnailUrl)} alt="" style={thumbStyle} />
         ) : (
           <div style={{ ...thumbPlaceholder, background: THUMB_GRADIENTS[Math.abs(hashStr(item.id)) % THUMB_GRADIENTS.length] }}>
             {typeIcon}
@@ -317,7 +318,7 @@ export function LibraryItem({ item, folders, tags, onRefresh, newCount, onMarkRe
 
       <div style={{ flex: 1, minWidth: 0 }}>
         <a
-          href={item.url}
+          href={safeYouTubeHref(item.url)}
           target="_top"
           rel="noopener"
           style={nameStyle}

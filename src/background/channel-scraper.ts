@@ -1,3 +1,5 @@
+import { isYouTubeUrl } from '../shared/backup-validate'
+
 export interface RawFeedEntry {
   videoId: string
   title: string
@@ -201,6 +203,13 @@ export async function fetchChannelVideos(
   const cached = videoCache.get(channelId)
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
     return cached.entries
+  }
+
+  // Defesa em profundidade: o validador do import já barra, mas o worker só
+  // faz GET em youtube.com, venha a URL de onde vier.
+  if (!isYouTubeUrl(channelUrl)) {
+    console.warn(`[MyTube] Refusing to fetch non-YouTube URL for ${channelId}`)
+    return []
   }
 
   try {
