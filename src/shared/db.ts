@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { NewVideoCheck, WatchEntry } from './types'
+import { collectWatchedVideoIds, sanitizeWatchEntries } from './backup-validate'
 
 interface MyTubeDB extends DBSchema {
   watchHistory: {
@@ -45,7 +46,8 @@ export async function removeWatchEntries(videoId: string): Promise<void> {
   const tx = database.transaction('watchHistory', 'readwrite')
   let cursor = await tx.store.openCursor()
   while (cursor) {
-    if (cursor.value.videoId === videoId) {
+    // Registro que não é objeto (null de um backup antigo) não pode derrubar o cursor.
+    if (cursor.value?.videoId === videoId) {
       await cursor.delete()
     }
     cursor = await cursor.continue()
@@ -145,7 +147,7 @@ export async function pruneStaleVideoChecks(validChannelIds: Set<string>): Promi
 export async function getWatchedVideoIds(): Promise<Set<string>> {
   const db = await getDB()
   const all = await db.getAll('watchHistory')
-  return new Set(all.map(e => e.videoId))
+  return collectWatchedVideoIds(all)
 }
 
 export async function exportWatchHistory(): Promise<WatchEntry[]> {
@@ -153,10 +155,13 @@ export async function exportWatchHistory(): Promise<WatchEntry[]> {
   return db.getAll('watchHistory')
 }
 
-export async function importWatchHistory(entries: WatchEntry[]): Promise<void> {
+export async function importWatchHistory(entries: unknown): Promise<void> {
+  // Cada elemento é validado aqui também: este é o único ponto que escreve no
+  // store, qualquer que seja o importador.
+  const { entries: valid } = sanitizeWatchEntries(entries)
   const db = await getDB()
   const tx = db.transaction('watchHistory', 'readwrite')
-  for (const entry of entries) {
+  for (const entry of valid) {
     await tx.store.add(entry)
   }
   await tx.done

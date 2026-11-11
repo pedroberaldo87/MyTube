@@ -4,6 +4,7 @@ import { exportWatchHistory, importWatchHistory } from '../../../shared/db'
 import { sendMessage } from '../../../shared/messages'
 import type { AppState, WatchEntry } from '../../../shared/types'
 import { useT } from '../../../shared/i18n'
+import { sanitizeBackupCollections } from '../../../shared/backup-validate'
 
 export interface ExportImportProps {
   onStateChange: () => void
@@ -19,19 +20,39 @@ interface BackupFile {
 type ImportMode = 'merge' | 'replace'
 type Status = { kind: 'success' | 'error'; text: string } | null
 
-function isValidBackup(data: unknown): data is BackupFile {
-  if (typeof data !== 'object' || data === null) return false
+interface PendingBackup extends BackupFile {
+  /** Elementos que o validador descartou (URL fora do YouTube, tipo errado, null...). */
+  dropped: number
+}
+
+/**
+ * Valida o envelope do arquivo e CADA elemento (ver shared/backup-validate.ts).
+ * Devolve só dados limpos; `null` rejeita o arquivo inteiro sem tocar o storage.
+ */
+function parseBackup(data: unknown): PendingBackup | null {
+  if (typeof data !== 'object' || data === null) return null
   const d = data as Record<string, unknown>
-  if (typeof d['version'] !== 'number') return false
-  if (typeof d['exportedAt'] !== 'string') return false
+  if (typeof d['version'] !== 'number') return null
+  if (typeof d['exportedAt'] !== 'string') return null
   const state = d['state']
-  if (typeof state !== 'object' || state === null) return false
+  if (typeof state !== 'object' || state === null) return null
   const s = state as Record<string, unknown>
-  if (!Array.isArray(s['organizables'])) return false
-  if (!Array.isArray(s['folders'])) return false
-  if (!Array.isArray(s['tags'])) return false
-  if (!Array.isArray(d['watchHistory'])) return false
-  return true
+  const clean = sanitizeBackupCollections({
+    organizables: s['organizables'],
+    folders: s['folders'],
+    tags: s['tags'],
+    deletedYoutubeIds: s['deletedYoutubeIds'],
+    watchHistory: d['watchHistory'],
+  })
+  if (!clean) return null
+  const { watchHistory, dropped, ...cleanState } = clean
+  return {
+    version: d['version'],
+    exportedAt: d['exportedAt'],
+    state: cleanState,
+    watchHistory,
+    dropped: dropped.organizables + dropped.folders + dropped.tags + dropped.watchHistory,
+  }
 }
 
 function formatDate(iso: string): string {
@@ -43,7 +64,7 @@ export function ExportImport({ onStateChange }: ExportImportProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [exportStatus, setExportStatus] = useState<Status>(null)
   const [importStatus, setImportStatus] = useState<Status>(null)
-  const [pendingBackup, setPendingBackup] = useState<BackupFile | null>(null)
+  const [pendingBackup, setPendingBackup] = useState<PendingBackup | null>(null)
   const [importing, setImporting] = useState(false)
 
   // --- Export ---
@@ -84,11 +105,12 @@ export function ExportImport({ onStateChange }: ExportImportProps) {
     try {
       const text = await file.text()
       const parsed: unknown = JSON.parse(text)
-      if (!isValidBackup(parsed)) {
+      const backup = parseBackup(parsed)
+      if (!backup) {
         setImportStatus({ kind: 'error', text: t('data.invalidFile') })
         return
       }
-      setPendingBackup(parsed)
+      setPendingBackup(backup)
     } catch {
       setImportStatus({ kind: 'error', text: t('data.parseError') })
     }
@@ -101,7 +123,7 @@ export function ExportImport({ onStateChange }: ExportImportProps) {
     setImportStatus(null)
 
     try {
-      const { state, watchHistory } = pendingBackup
+      const { state, watchHistory, dropped } = pendingBackup
 
       if (mode === 'replace') {
         // Overwrite state entirely
@@ -142,7 +164,10 @@ export function ExportImport({ onStateChange }: ExportImportProps) {
 
       setPendingBackup(null)
       onStateChange()
-      setImportStatus({ kind: 'success', text: t('data.imported') })
+      setImportStatus({
+        kind: 'success',
+        text: dropped > 0 ? `${t('data.imported')} (${dropped} ${t('data.skipped')})` : t('data.imported'),
+      })
     } catch (err) {
       setImportStatus({ kind: 'error', text: `${t('data.importFailed')}: ${(err as Error).message}` })
     } finally {
