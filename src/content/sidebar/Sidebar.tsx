@@ -1,6 +1,6 @@
 import { h } from 'preact'
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
-import { SCRAPE_HEALTH_KEY, isUnhealthy, type ScrapeHealth } from '../../background/channel-poller'
+import { SCRAPE_HEALTH_KEY, isUnhealthy, type ScrapeHealth } from '../../shared/scrape-health'
 import { sendMessage } from '../../shared/messages'
 import type { AppState } from '../../shared/types'
 import { NowPlaying } from './sections/NowPlaying'
