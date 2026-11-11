@@ -51,11 +51,39 @@ assert.equal(a.handle, 'alpha')
 assert.equal(a.folderId, 'f1')
 assert.ok(s.organizables.find(o => o.youtubeId === 'UCbbbb' && o.handle === 'beta'))
 
-// 3. A UC id is never replaced by a different UC id (matched by URL path here).
+// 3. A UC id is never replaced by a different UC id. The incoming channel
+//    (same @alpha URL, other UC id) matches nothing and becomes its own entry;
+//    the saved one keeps its id and identity.
 seed([stored({ youtubeId: 'UCaaaa', name: 'Old', url: 'https://www.youtube.com/@alpha', handle: 'alpha' })])
-await syncOrganizables([scraped('UCzzzz', 'alpha')])
+await syncOrganizables([scraped('UCzzzz', 'alpha', 'Reassigned')])
 s = await getState()
-assert.deepEqual(s.organizables.map(o => o.youtubeId), ['UCaaaa'], 'UC id must not be rewritten to another UC id')
+assert.deepEqual(s.organizables.map(o => o.youtubeId).sort(), ['UCaaaa', 'UCzzzz'], 'both channels are kept, none rewritten')
+const kept = s.organizables.find(o => o.youtubeId === 'UCaaaa')
+assert.equal(kept.name, 'Old', 'saved entry keeps its own name (URL match)')
+assert.equal(kept.folderId, 'f1')
+
+// 3b. Same, matched through the HANDLE branch (stored URL is the /channel/ form,
+//     so only the handle ties them): the saved UC entry is not given the other
+//     channel's name, url or thumbnail.
+seed([stored({ youtubeId: 'UCaaaa', name: 'Old', url: 'https://www.youtube.com/channel/UCaaaa', thumbnailUrl: 'https://yt3.ggpht.com/old', handle: 'alpha' })])
+await syncOrganizables([scraped('UCzzzz', 'alpha', 'Reassigned')])
+s = await getState()
+assert.deepEqual(s.organizables.map(o => o.youtubeId).sort(), ['UCaaaa', 'UCzzzz'])
+const kept2 = s.organizables.find(o => o.youtubeId === 'UCaaaa')
+assert.equal(kept2.name, 'Old', 'name not overwritten with the other channel')
+assert.equal(kept2.url, 'https://www.youtube.com/channel/UCaaaa', 'url not overwritten')
+assert.equal(kept2.thumbnailUrl, 'https://yt3.ggpht.com/old', 'thumbnail not overwritten')
+assert.equal(kept2.folderId, 'f1')
+const other = s.organizables.find(o => o.youtubeId === 'UCzzzz')
+assert.equal(other.name, 'Reassigned')
+assert.notEqual(other.folderId, 'f1', 'the new channel does not inherit the old one\'s folder')
+
+// 3c. A legacy entry (non-UC id) matched by handle is still migrated.
+seed([stored({ youtubeId: 'legacy-id', name: 'Old', url: 'https://www.youtube.com/channel/legacy-id', handle: 'alpha' })])
+await syncOrganizables([scraped('UCzzzz', 'alpha', 'New')])
+s = await getState()
+assert.deepEqual(s.organizables.map(o => o.youtubeId), ['UCzzzz'], 'legacy id is migrated through the handle match')
+assert.equal(s.organizables[0].folderId, 'f1')
 
 // 4. Legacy (non-UC id, no handle, no URL match) is still migrated by name.
 seed([stored({ youtubeId: 'legacy-id', name: 'Same Name', url: 'https://www.youtube.com/channel/legacy-id' })])
