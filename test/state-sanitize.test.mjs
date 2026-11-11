@@ -33,7 +33,9 @@ const canal = (over = {}) => ({
   assert.deepEqual((await getState()).organizables, [])
 }
 
-// entradas tortas saem; as boas ficam; a que perdeu tagIds ganha []
+// leitura sem perda: só a FORMA é consertada. Entradas que não são objeto saem;
+// a que perdeu tagIds ganha []; url/thumbnail fora do padrão NÃO apagam o item
+// (quem usa a URL a valida no ponto de uso).
 {
   store.mytube_state = {
     organizables: [
@@ -41,18 +43,35 @@ const canal = (over = {}) => ({
       null,
       canal({ id: 'o2', youtubeId: 'UC2', tagIds: undefined }),
       canal({ id: 'o3', youtubeId: 'UC3', url: 'https://evil.example/' }),
-      canal({ id: 'o4', youtubeId: 'UC4', url: 'javascript:alert(1)' }),
     ],
     folders: [{ id: 'f', name: 'P', parentId: null, color: '#fff', order: 0 }, null],
     tags: [null, { id: 't', name: 'T', color: '#000' }],
   }
   const s = await getState()
-  assert.deepEqual(s.organizables.map(o => o.id), ['o1', 'o2'])
+  assert.deepEqual(s.organizables.map(o => o.id), ['o1', 'o2', 'o3'])
   assert.deepEqual(s.organizables[1].tagIds, [])
   assert.equal(s.folders.length, 1)
   assert.equal(s.tags.length, 1)
   await setState(s)
-  assert.equal(store.mytube_state.organizables.length, 2, 'a regravação persiste o estado limpo')
+  assert.equal(store.mytube_state.organizables.length, 3, 'a regravação não apaga item por causa da url')
+}
+
+// legado: url vazia/relativa/m.youtube.com e avatar em outro host do Google
+// sobrevivem a getState → setState, sem ser apagados nem em branco
+{
+  const legado = [
+    canal({ id: 'l1', youtubeId: 'UCl1', url: '' }),
+    canal({ id: 'l2', youtubeId: 'UCl2', url: '/channel/UCl2' }),
+    canal({ id: 'l3', youtubeId: 'UCl3', url: 'https://m.youtube.com/@x' }),
+    canal({ id: 'l4', youtubeId: 'UCl4', thumbnailUrl: 'https://lh3.googleusercontent.com/a=s88' }),
+    canal({ id: 'l5', youtubeId: 'UCl5', thumbnailUrl: 'https://example.com/a.png' }),
+  ]
+  store.mytube_state = { organizables: structuredClone(legado), folders: [], tags: [] }
+  const s = await getState()
+  s.tags.push({ id: 't9', name: 'novo', color: '#000' })
+  await setState(s)
+  assert.deepEqual(store.mytube_state.organizables, legado, 'itens legados voltam idênticos ao storage')
+  assert.equal(store.mytube_state.tags.length, 1)
 }
 
 // estado saudável: round-trip idêntico
