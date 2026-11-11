@@ -2,7 +2,7 @@ import { h } from 'preact'
 import { useState } from 'preact/hooks'
 import type { AppState } from '../../shared/types'
 import { sendMessage } from '../../shared/messages'
-import { exportWatchHistory, importWatchHistory } from '../../shared/db'
+import { exportWatchHistory, importWatchHistory, replaceWatchHistory } from '../../shared/db'
 import { TagManager } from '../components/TagManager'
 import { sanitizeBackupCollections, sanitizeState, type SanitizedBackup } from '../../shared/backup-validate'
 
@@ -149,8 +149,10 @@ function ImportSection({ onRefresh }: { onRefresh: () => Promise<void> }) {
         await chrome.storage.local.set({ mytube_state: existing })
       }
 
-      // Import watch history
-      await importWatchHistory(importData.watchHistory)
+      // Import watch history. "Replace" troca o histórico (antes ele só acrescentava,
+      // então o histórico antigo sobrevivia a um restore que prometia substituir tudo).
+      if (importMode === 'replace') await replaceWatchHistory(importData.watchHistory)
+      else await importWatchHistory(importData.watchHistory)
 
       const skipped = importData.dropped.organizables + importData.dropped.folders
         + importData.dropped.tags + importData.dropped.watchHistory

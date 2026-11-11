@@ -1,6 +1,7 @@
 import * as storage from '../shared/storage'
 import * as db from '../shared/db'
 import type { MessageType, MessageResponse } from '../shared/types'
+import { handleWatchMessage, isWatchMessage } from './watch-history'
 import { pollNewVideos, fetchFolderFeed, fetchHomeFeed } from './channel-poller'
 import { getAIConfig, saveAIConfig, sanitizeConfig, OPENAI_OAUTH_BASE_URL } from '../shared/ai/storage'
 import { beginDeviceAuth } from '../shared/ai/device-auth'
@@ -196,6 +197,11 @@ async function handleMessage(
   message: MessageType,
   sender: chrome.runtime.MessageSender
 ): Promise<MessageResponse<MessageType['type']>> {
+  // Backup do histórico de exibição (bloco próprio, ver watch-history.ts).
+  if (isWatchMessage(message)) {
+    return (await handleWatchMessage(message, db)) as MessageResponse<MessageType['type']>
+  }
+
   switch (message.type) {
     case 'ADD_WATCH_ENTRY': {
       await db.addWatchEntry(message.payload)

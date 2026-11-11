@@ -1,6 +1,5 @@
 import { h } from 'preact'
 import { useRef, useState } from 'preact/hooks'
-import { exportWatchHistory, importWatchHistory } from '../../../shared/db'
 import { sendMessage } from '../../../shared/messages'
 import type { AppState, WatchEntry } from '../../../shared/types'
 import { useT } from '../../../shared/i18n'
@@ -55,6 +54,11 @@ function parseBackup(data: unknown): PendingBackup | null {
   }
 }
 
+async function importWatchHistoryViaWorker(mode: ImportMode, entries: WatchEntry[]): Promise<void> {
+  const res = await sendMessage({ type: 'WATCH_IMPORT', payload: { mode, entries } })
+  if (!res?.ok) throw new Error('watch history import failed')
+}
+
 function formatDate(iso: string): string {
   return iso.slice(0, 10)
 }
@@ -72,7 +76,10 @@ export function ExportImport({ onStateChange }: ExportImportProps) {
     setExportStatus(null)
     try {
       const state = await sendMessage({ type: 'GET_STATE' })
-      const watchHistory = await exportWatchHistory()
+      // O histórico mora no IndexedDB da extensão; a sidebar roda no youtube.com e
+      // não o abre (abriria o banco da página). Pede ao service worker.
+      const watchHistory = await sendMessage({ type: 'WATCH_EXPORT' })
+      if (!Array.isArray(watchHistory)) throw new Error('watch history unavailable')
       const backup: BackupFile = {
         version: 1,
         exportedAt: new Date().toISOString(),
@@ -128,17 +135,8 @@ export function ExportImport({ onStateChange }: ExportImportProps) {
       if (mode === 'replace') {
         // Overwrite state entirely
         await chrome.storage.local.set({ mytube_state: state })
-        // Clear existing watch history then import
-        const db = await import('../../../shared/db')
-        // importWatchHistory only adds; clear store first by reading existing and using a fresh db call
-        // We use a workaround: clear via indexedDB directly via idb
-        const { openDB } = await import('idb')
-        const rawDb = await openDB('mytube', 1)
-        const tx = rawDb.transaction('watchHistory', 'readwrite')
-        await tx.store.clear()
-        await tx.done
-        rawDb.close()
-        await db.importWatchHistory(watchHistory)
+        // Troca o histórico no service worker (limpa e grava numa transação só).
+        await importWatchHistoryViaWorker('replace', watchHistory)
       } else {
         // Merge: get current state, merge organizables by youtubeId
         const currentState = await sendMessage({ type: 'GET_STATE' })
@@ -159,7 +157,7 @@ export function ExportImport({ onStateChange }: ExportImportProps) {
         }
 
         await chrome.storage.local.set({ mytube_state: mergedState })
-        await importWatchHistory(watchHistory)
+        await importWatchHistoryViaWorker('merge', watchHistory)
       }
 
       setPendingBackup(null)
