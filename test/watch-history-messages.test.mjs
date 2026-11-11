@@ -16,7 +16,6 @@ function memoryStore(inicial = []) {
     async exportWatchHistory() { return rows.map(r => ({ ...r })) },
     async importWatchHistory(entries) { rows.push(...entries) },
     async replaceWatchHistory(entries) { rows.splice(0, rows.length, ...entries) },
-    async clearWatchHistory() { rows.splice(0, rows.length) },
   }
 }
 
@@ -67,13 +66,6 @@ for (const payload of [undefined, null, { mode: 'wipe', entries: [] }, { entries
   assert.equal(store.rows.length, 1)
 }
 
-// ── WATCH_CLEAR ─────────────────────────────────────────────────────────────
-{
-  const store = memoryStore([e('aaaaaaaaaaa', 1), e('bbbbbbbbbbb', 2)])
-  assert.deepEqual(await handleWatchMessage({ type: 'WATCH_CLEAR' }, store), { ok: true })
-  assert.equal(store.rows.length, 0)
-}
-
 // ── tipo que não é do histórico: não é tratado aqui ─────────────────────────
 assert.equal(await handleWatchMessage({ type: 'GET_STATE' }, memoryStore()), undefined)
 
@@ -81,7 +73,7 @@ assert.equal(await handleWatchMessage({ type: 'GET_STATE' }, memoryStore()), und
 {
   const { readFile } = await import('node:fs/promises')
   const settings = await readFile(new URL('../src/dashboard/pages/Settings.tsx', import.meta.url), 'utf8')
-  assert.match(settings, /importMode === 'replace'\)\s*await replaceWatchHistory\(/, 'Replace do dashboard deve chamar replaceWatchHistory')
+  assert.match(settings, /restoreReplace\(\s*importData\.historyReplacement,\s*replaceWatchHistory,/, 'Replace do dashboard deve trocar o histórico via replaceWatchHistory')
 }
 
 console.log('ok watch-history-messages')

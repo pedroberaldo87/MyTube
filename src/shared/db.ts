@@ -167,13 +167,6 @@ export async function importWatchHistory(entries: unknown): Promise<void> {
   await tx.done
 }
 
-export async function clearWatchHistory(): Promise<void> {
-  const db = await getDB()
-  const tx = db.transaction('watchHistory', 'readwrite')
-  await tx.store.clear()
-  await tx.done
-}
-
 /**
  * "Substituir" do restore: limpa e grava na MESMA transação, então uma falha no
  * meio desfaz tudo e o histórico anterior não se perde pela metade.

@@ -5,6 +5,8 @@ import { sendMessage } from '../../shared/messages'
 import { exportWatchHistory, importWatchHistory, replaceWatchHistory } from '../../shared/db'
 import { TagManager } from '../components/TagManager'
 import { sanitizeBackupCollections, repairState, type SanitizedBackup } from '../../shared/backup-validate'
+import type { WatchEntry } from '../../shared/types'
+import { normalizeHistoryField, planHistoryReplace, restoreReplace } from '../../shared/restore'
 
 interface SettingsProps {
   appState: AppState
@@ -13,10 +15,16 @@ interface SettingsProps {
 
 // O arquivo passa por UM validador por elemento (shared/backup-validate.ts) antes
 // de virar `importData`; nada cru chega ao storage nem ao IndexedDB.
-type ImportPayload = SanitizedBackup
+type ImportPayload = SanitizedBackup & {
+  /** O que "Replace" grava no lugar do histórico; `null` = histórico atual intacto. */
+  historyReplacement: WatchEntry[] | null
+}
 
 function parseImportPayload(obj: unknown): ImportPayload | null {
-  return sanitizeBackupCollections(obj)
+  const rec = typeof obj === 'object' && obj !== null ? (obj as Record<string, unknown>) : null
+  const clean = sanitizeBackupCollections(rec ? { ...rec, watchHistory: normalizeHistoryField(rec['watchHistory']) } : obj)
+  if (!clean || !rec) return null
+  return { ...clean, historyReplacement: planHistoryReplace(rec['watchHistory'], clean.watchHistory) }
 }
 
 function ExportSection() {
@@ -118,13 +126,19 @@ function ImportSection({ onRefresh }: { onRefresh: () => Promise<void> }) {
     setStatus(null)
     try {
       if (importMode === 'replace') {
-        // Rebuild state from scratch using chrome.storage directly
+        // Rebuild state from scratch using chrome.storage directly. Histórico
+        // PRIMEIRO (transação atômica): se falhar, o mytube_state do usuário
+        // continua intacto. Backup sem histórico válido não toca no atual.
         const newState: AppState = {
           organizables: importData.organizables,
           folders: importData.folders,
           tags: importData.tags,
         }
-        await chrome.storage.local.set({ mytube_state: newState })
+        await restoreReplace(
+          importData.historyReplacement,
+          replaceWatchHistory,
+          () => chrome.storage.local.set({ mytube_state: newState }),
+        )
       } else {
         // Merge: add each organizable — background deduplicates by youtubeId
         for (const item of importData.organizables) {
@@ -149,16 +163,17 @@ function ImportSection({ onRefresh }: { onRefresh: () => Promise<void> }) {
         await chrome.storage.local.set({ mytube_state: existing })
       }
 
-      // Import watch history. "Replace" troca o histórico (antes ele só acrescentava,
-      // então o histórico antigo sobrevivia a um restore que prometia substituir tudo).
-      if (importMode === 'replace') await replaceWatchHistory(importData.watchHistory)
-      else await importWatchHistory(importData.watchHistory)
+      // Merge acrescenta o histórico; o "Replace" já trocou o dele acima.
+      if (importMode === 'merge') await importWatchHistory(importData.watchHistory)
 
+      const historyCount = importMode === 'replace'
+        ? (importData.historyReplacement?.length ?? 0)
+        : importData.watchHistory.length
       const skipped = importData.dropped.organizables + importData.dropped.folders
         + importData.dropped.tags + importData.dropped.watchHistory
       setStatus({
         type: 'success',
-        message: `Import complete. ${importData.organizables.length} items, ${importData.watchHistory.length} watch history entries.`
+        message: `Import complete. ${importData.organizables.length} items, ${historyCount} watch history entries.`
           + (skipped > 0 ? ` ${skipped} invalid entries were skipped.` : ''),
       })
       setImportData(null)

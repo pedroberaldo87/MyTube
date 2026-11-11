@@ -4,6 +4,7 @@ import { sendMessage } from '../../../shared/messages'
 import type { AppState, WatchEntry } from '../../../shared/types'
 import { useT } from '../../../shared/i18n'
 import { sanitizeBackupCollections } from '../../../shared/backup-validate'
+import { normalizeHistoryField, planHistoryReplace, restoreReplace } from '../../../shared/restore'
 
 export interface ExportImportProps {
   onStateChange: () => void
@@ -22,6 +23,11 @@ type Status = { kind: 'success' | 'error'; text: string } | null
 interface PendingBackup extends BackupFile {
   /** Elementos que o validador descartou (URL fora do YouTube, tipo errado, null...). */
   dropped: number
+  /**
+   * O que "Substituir" grava no lugar do histórico atual; `null` = deixar o
+   * histórico como está (backup sem `watchHistory`, ou sem nenhuma entrada válida).
+   */
+  historyReplacement: WatchEntry[] | null
 }
 
 /**
@@ -41,7 +47,7 @@ function parseBackup(data: unknown): PendingBackup | null {
     folders: s['folders'],
     tags: s['tags'],
     deletedYoutubeIds: s['deletedYoutubeIds'],
-    watchHistory: d['watchHistory'],
+    watchHistory: normalizeHistoryField(d['watchHistory']),
   })
   if (!clean) return null
   const { watchHistory, dropped, ...cleanState } = clean
@@ -51,6 +57,7 @@ function parseBackup(data: unknown): PendingBackup | null {
     state: cleanState,
     watchHistory,
     dropped: dropped.organizables + dropped.folders + dropped.tags + dropped.watchHistory,
+    historyReplacement: planHistoryReplace(d['watchHistory'], watchHistory),
   }
 }
 
@@ -133,10 +140,14 @@ export function ExportImport({ onStateChange }: ExportImportProps) {
       const { state, watchHistory, dropped } = pendingBackup
 
       if (mode === 'replace') {
-        // Overwrite state entirely
-        await chrome.storage.local.set({ mytube_state: state })
-        // Troca o histórico no service worker (limpa e grava numa transação só).
-        await importWatchHistoryViaWorker('replace', watchHistory)
+        // Histórico PRIMEIRO (no service worker, numa transação só): se falhar, o
+        // mytube_state do usuário continua intacto. Sem histórico válido no
+        // backup, o histórico atual não é tocado.
+        await restoreReplace(
+          pendingBackup.historyReplacement,
+          (entries) => importWatchHistoryViaWorker('replace', entries),
+          () => chrome.storage.local.set({ mytube_state: state }),
+        )
       } else {
         // Merge: get current state, merge organizables by youtubeId
         const currentState = await sendMessage({ type: 'GET_STATE' })

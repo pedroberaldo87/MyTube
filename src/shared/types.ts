@@ -123,7 +123,6 @@ export type MessageType =
   // pede ao worker, que valida cada elemento e escreve no banco da extensão.
   | { type: 'WATCH_EXPORT'; payload?: undefined }
   | { type: 'WATCH_IMPORT'; payload: { mode: 'merge' | 'replace'; entries: WatchEntry[] } }
-  | { type: 'WATCH_CLEAR'; payload?: undefined }
   | { type: 'AI_LIST_PROVIDERS'; payload?: undefined }
   | { type: 'AI_SAVE_PROVIDER'; payload: AIProvider }
   | { type: 'AI_DELETE_PROVIDER'; payload: { id: string } }
