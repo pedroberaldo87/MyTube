@@ -324,16 +324,17 @@ async function handleMessage(
     }
 
     case 'MUTE_ALL_CHANNELS': {
-      const state = await storage.getState()
-      let changed = 0
-      for (const o of state.organizables) {
-        if (o.type === 'channel' && !o.muted) {
-          o.muted = true
-          changed++
+      const changed = await storage.updateState(state => {
+        let n = 0
+        for (const o of state.organizables) {
+          if (o.type === 'channel' && !o.muted) {
+            o.muted = true
+            n++
+          }
         }
-      }
-      if (changed > 0) {
-        await storage.setState(state)
+        return n > 0 ? n : storage.UNCHANGED
+      })
+      if (changed) {
         await db.markAllSeen(Date.now())
         chrome.action.setBadgeText({ text: '' })
       }

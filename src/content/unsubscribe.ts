@@ -1,4 +1,4 @@
-import { isYouTubeUrl } from '../shared/backup-validate'
+import { isYouTubeChannelUrl, isYouTubeReturnUrl } from '../shared/backup-validate'
 
 const PENDING_KEY = 'mytube-pending-unsub'
 const BATCH_KEY = 'mytube-unsub-batch'
@@ -23,7 +23,7 @@ const BATCH_TTL_MS = 10 * 60 * 1000
 export function triggerUnsubscribe(channelUrl: string): void {
   // Só navega para https://(www.)youtube.com. `organizable.url` vem do storage
   // (e, antes do validador, de backups); nunca é confiável para `location.href`.
-  if (!isYouTubeUrl(channelUrl)) {
+  if (!isYouTubeChannelUrl(channelUrl)) {
     console.warn('[MyTube] Refusing to unsubscribe via non-YouTube URL')
     return
   }
@@ -39,7 +39,7 @@ export function triggerUnsubscribe(channelUrl: string): void {
 }
 
 export function triggerBatchUnsubscribe(requestedUrls: string[]): void {
-  const channelUrls = requestedUrls.filter(isYouTubeUrl)
+  const channelUrls = requestedUrls.filter(isYouTubeChannelUrl)
   if (channelUrls.length === 0) return
 
   const batch: BatchUnsub = { urls: channelUrls, total: channelUrls.length, updatedAt: Date.now() }
@@ -94,7 +94,7 @@ function readBatch(): BatchUnsub | null {
       clearBatch()
       return null
     }
-    batch.urls = Array.isArray(batch.urls) ? batch.urls.filter(isYouTubeUrl) : []
+    batch.urls = Array.isArray(batch.urls) ? batch.urls.filter(isYouTubeChannelUrl) : []
     return batch
   } catch {
     clearBatch()
@@ -110,7 +110,7 @@ function channelPath(url: string): string {
 // item. Anything else means the stored batch belongs to an earlier run.
 function isBatchHead(batch: BatchUnsub, channelUrl: string): boolean {
   const head = batch.urls[0]
-  return !!head && isYouTubeUrl(channelUrl) && channelPath(head) === channelPath(channelUrl)
+  return !!head && isYouTubeChannelUrl(channelUrl) && channelPath(head) === channelPath(channelUrl)
 }
 
 // Drops the current item and goes to the next one, or finishes the batch.
@@ -123,7 +123,7 @@ function continueBatch(batch: BatchUnsub): void {
     sessionStorage.removeItem(RETURN_KEY)
     console.log(`[MyTube] Batch unsubscribe complete (${batch.total} channels)`)
     setTimeout(() => {
-      window.location.href = isYouTubeUrl(returnUrl) ? returnUrl : 'https://www.youtube.com'
+      window.location.href = isYouTubeReturnUrl(returnUrl) ? returnUrl : 'https://www.youtube.com'
     }, 800)
     return
   }
@@ -266,7 +266,7 @@ async function checkPending(): Promise<void> {
   sessionStorage.removeItem(PENDING_KEY)
   // The pending URL is what we navigated to; sessionStorage is also writable by
   // the page, so it is revalidated before it identifies the channel.
-  if (!isYouTubeUrl(pending?.channelUrl)) {
+  if (!isYouTubeChannelUrl(pending?.channelUrl)) {
     clearBatch()
     return
   }

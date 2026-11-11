@@ -1,4 +1,4 @@
-import { isYouTubeUrl } from '../shared/backup-validate'
+import { isYouTubeChannelUrl } from '../shared/backup-validate'
 
 export interface RawFeedEntry {
   videoId: string
@@ -207,7 +207,7 @@ export async function fetchChannelVideos(
 
   // Defesa em profundidade: o validador do import já barra, mas o worker só
   // faz GET em youtube.com, venha a URL de onde vier.
-  if (!isYouTubeUrl(channelUrl)) {
+  if (!isYouTubeChannelUrl(channelUrl)) {
     console.warn(`[MyTube] Refusing to fetch non-YouTube URL for ${channelId}`)
     return []
   }

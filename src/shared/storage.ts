@@ -19,12 +19,64 @@ export async function setState(state: AppState): Promise<void> {
   await chrome.storage.local.set({ [STORAGE_KEY]: state })
 }
 
+/** Devolvido por `fn` em `updateState` para NÃO gravar (nada mudou). */
+export const UNCHANGED: unique symbol = Symbol('mytube.state.unchanged')
+
+// Fila de escrita deste contexto (service worker, página do dashboard). Entre
+// contextos da extensão (mesma origem) a exclusão vem do Web Lock abaixo.
+let queue: Promise<unknown> = Promise.resolve()
+const LOCK_NAME = 'mytube_state'
+
+function withStateLock<T>(task: () => Promise<T>): Promise<T> {
+  const run = queue.then(() => {
+    const locks = (globalThis as { navigator?: { locks?: LockManager } }).navigator?.locks
+    return locks ? locks.request(LOCK_NAME, task) : task()
+  })
+  queue = run.catch(() => undefined)
+  return run
+}
+
+/**
+ * ÚNICO caminho de ler-mudar-gravar `mytube_state`. Lê DENTRO da seção crítica
+ * (por `getState`, então com a forma consertada), deixa `fn` mudar o estado e
+ * grava. Duas chamadas simultâneas rodam uma depois da outra e a segunda enxerga
+ * o resultado da primeira; antes, cada uma lia a sua foto e a última a gravar
+ * apagava a mudança da outra.
+ *
+ * `fn` pode ser assíncrona e devolve o valor que `updateState` devolve. Se
+ * devolver `UNCHANGED`, nada é gravado; se lançar, nada é gravado e a fila segue.
+ * Quem muta o estado fora daqui (`getState` → `setState`) não tem essa garantia.
+ */
+export function updateState<T = void>(
+  fn: (state: AppState) => T | typeof UNCHANGED | Promise<T | typeof UNCHANGED>,
+): Promise<T | undefined> {
+  return withStateLock(async () => {
+    const state = await getState()
+    const result = await fn(state)
+    if (result === UNCHANGED) return undefined
+    await setState(state)
+    return result
+  })
+}
+
 function genId(): string {
   return crypto.randomUUID()
 }
 
 export async function addOrganizable(item: Omit<Organizable, 'id' | 'addedAt' | 'lastSyncedAt'>): Promise<Organizable> {
-  const state = await getState()
+  let result: Organizable | undefined
+  await updateState(state => {
+    const found = findOrganizable(state, item)
+    if (found) {
+      result = found
+      return UNCHANGED
+    }
+    result = insertOrganizable(state, item)
+  })
+  return result as Organizable
+}
+
+function findOrganizable(state: AppState, item: Omit<Organizable, 'id' | 'addedAt' | 'lastSyncedAt'>): Organizable | undefined {
   let existing = state.organizables.find(
     o => o.youtubeId === item.youtubeId && o.type === item.type
   )
@@ -38,8 +90,10 @@ export async function addOrganizable(item: Omit<Organizable, 'id' | 'addedAt' | 
       })
     }
   }
-  if (existing) return existing
+  return existing
+}
 
+function insertOrganizable(state: AppState, item: Omit<Organizable, 'id' | 'addedAt' | 'lastSyncedAt'>): Organizable {
   const key = `${item.type}:${item.youtubeId}`
   if (state.deletedYoutubeIds) {
     state.deletedYoutubeIds = state.deletedYoutubeIds.filter(k => k !== key)
@@ -53,33 +107,32 @@ export async function addOrganizable(item: Omit<Organizable, 'id' | 'addedAt' | 
     lastSyncedAt: Date.now(),
   }
   state.organizables.push(organizable)
-  await setState(state)
   return organizable
 }
 
 export async function updateOrganizable(updated: Organizable): Promise<void> {
-  const state = await getState()
-  const idx = state.organizables.findIndex(o => o.id === updated.id)
-  if (idx === -1) return
-  state.organizables[idx] = updated
-  await setState(state)
+  await updateState(state => {
+    const idx = state.organizables.findIndex(o => o.id === updated.id)
+    if (idx === -1) return UNCHANGED
+    state.organizables[idx] = updated
+  })
 }
 
 export async function deleteOrganizable(id: string): Promise<void> {
-  const state = await getState()
-  const item = state.organizables.find(o => o.id === id)
-  state.organizables = state.organizables.filter(o => o.id !== id)
-  if (item) {
-    const deleted = state.deletedYoutubeIds ?? []
-    const key = `${item.type}:${item.youtubeId}`
-    if (!deleted.includes(key)) deleted.push(key)
-    if (item.handle) {
-      const handleKey = `${item.type}:@${item.handle}`
-      if (!deleted.includes(handleKey)) deleted.push(handleKey)
+  await updateState(state => {
+    const item = state.organizables.find(o => o.id === id)
+    state.organizables = state.organizables.filter(o => o.id !== id)
+    if (item) {
+      const deleted = state.deletedYoutubeIds ?? []
+      const key = `${item.type}:${item.youtubeId}`
+      if (!deleted.includes(key)) deleted.push(key)
+      if (item.handle) {
+        const handleKey = `${item.type}:@${item.handle}`
+        if (!deleted.includes(handleKey)) deleted.push(handleKey)
+      }
+      state.deletedYoutubeIds = deleted
     }
-    state.deletedYoutubeIds = deleted
-  }
-  await setState(state)
+  })
 }
 
 export async function getOrganizableByYoutubeId(youtubeId: string, type: 'channel' | 'playlist'): Promise<Organizable | null> {
@@ -100,23 +153,37 @@ export async function getOrganizableByYoutubeId(youtubeId: string, type: 'channe
 }
 
 export async function addFolder(name: string, parentId: string | null, color: string): Promise<Folder> {
-  const state = await getState()
-  const maxOrder = state.folders
-    .filter(f => f.parentId === parentId)
-    .reduce((max, f) => Math.max(max, f.order), -1)
+  return (await updateState(state => {
+    const maxOrder = state.folders
+      .filter(f => f.parentId === parentId)
+      .reduce((max, f) => Math.max(max, f.order), -1)
 
-  const folder: Folder = { id: genId(), name, parentId, color, order: maxOrder + 1 }
-  state.folders.push(folder)
-  await setState(state)
-  return folder
+    const folder: Folder = { id: genId(), name, parentId, color, order: maxOrder + 1 }
+    state.folders.push(folder)
+    return folder
+  })) as Folder
 }
 
 export async function updateFolder(updated: Folder): Promise<void> {
-  const state = await getState()
-  const idx = state.folders.findIndex(f => f.id === updated.id)
-  if (idx === -1) return
-  state.folders[idx] = updated
-  await setState(state)
+  await updateState(state => {
+    const idx = state.folders.findIndex(f => f.id === updated.id)
+    if (idx === -1) return UNCHANGED
+    state.folders[idx] = updated
+  })
+}
+
+/**
+ * Muda só `name` e `color` da pasta, relendo o resto dentro da seção crítica.
+ * `updateFolder` troca a pasta inteira por uma cópia lida antes, então desfaz
+ * uma mudança simultânea de `order`/`parentId`.
+ */
+export async function renameFolder(id: string, name: string, color: string): Promise<void> {
+  await updateState(state => {
+    const folder = state.folders.find(f => f.id === id)
+    if (!folder) return UNCHANGED
+    folder.name = name
+    folder.color = color
+  })
 }
 
 /**
@@ -131,61 +198,60 @@ export async function updateFolder(updated: Folder): Promise<void> {
  * elas e os canais dentro desapareciam da tela sem virar "sem pasta".
  */
 export async function deleteFolder(id: string): Promise<void> {
-  const state = await getState()
-
-  // O Set também é a guarda de ciclo: `parentId` circular em dado corrompido
-  // fazia a versão recursiva rodar para sempre.
-  const doomed = new Set<string>()
-  const pending = [id]
-  while (pending.length > 0) {
-    const current = pending.pop() as string
-    if (doomed.has(current)) continue
-    doomed.add(current)
-    for (const f of state.folders) {
-      if (f.parentId === current) pending.push(f.id)
+  await updateState(state => {
+    // O Set também é a guarda de ciclo: `parentId` circular em dado corrompido
+    // fazia a versão recursiva rodar para sempre.
+    const doomed = new Set<string>()
+    const pending = [id]
+    while (pending.length > 0) {
+      const current = pending.pop() as string
+      if (doomed.has(current)) continue
+      doomed.add(current)
+      for (const f of state.folders) {
+        if (f.parentId === current) pending.push(f.id)
+      }
     }
-  }
 
-  state.organizables = state.organizables.map(o =>
-    o.folderId !== null && doomed.has(o.folderId) ? { ...o, folderId: null } : o
-  )
-  state.folders = state.folders.filter(f => !doomed.has(f.id))
-  await setState(state)
+    state.organizables = state.organizables.map(o =>
+      o.folderId !== null && doomed.has(o.folderId) ? { ...o, folderId: null } : o
+    )
+    state.folders = state.folders.filter(f => !doomed.has(f.id))
+  })
 }
 
 export async function reorderFolders(orderedIds: string[]): Promise<void> {
-  const state = await getState()
-  for (let i = 0; i < orderedIds.length; i++) {
-    const folder = state.folders.find(f => f.id === orderedIds[i])
-    if (folder) folder.order = i
-  }
-  await setState(state)
+  await updateState(state => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      const folder = state.folders.find(f => f.id === orderedIds[i])
+      if (folder) folder.order = i
+    }
+  })
 }
 
 export async function addTag(name: string, color: string): Promise<Tag> {
-  const state = await getState()
-  const tag: Tag = { id: genId(), name, color }
-  state.tags.push(tag)
-  await setState(state)
-  return tag
+  return (await updateState(state => {
+    const tag: Tag = { id: genId(), name, color }
+    state.tags.push(tag)
+    return tag
+  })) as Tag
 }
 
 export async function updateTag(updated: Tag): Promise<void> {
-  const state = await getState()
-  const idx = state.tags.findIndex(t => t.id === updated.id)
-  if (idx === -1) return
-  state.tags[idx] = updated
-  await setState(state)
+  await updateState(state => {
+    const idx = state.tags.findIndex(t => t.id === updated.id)
+    if (idx === -1) return UNCHANGED
+    state.tags[idx] = updated
+  })
 }
 
 export async function deleteTag(id: string): Promise<void> {
-  const state = await getState()
-  state.organizables = state.organizables.map(o => ({
-    ...o,
-    tagIds: o.tagIds.filter(tid => tid !== id),
-  }))
-  state.tags = state.tags.filter(t => t.id !== id)
-  await setState(state)
+  await updateState(state => {
+    state.organizables = state.organizables.map(o => ({
+      ...o,
+      tagIds: o.tagIds.filter(tid => tid !== id),
+    }))
+    state.tags = state.tags.filter(t => t.id !== id)
+  })
 }
 
 function extractHandleFromPath(url: string): string | undefined {
@@ -213,7 +279,10 @@ function areDifferentUcChannels(a: { youtubeId: string }, b: { youtubeId: string
 }
 
 export async function syncOrganizables(items: Omit<Organizable, 'id' | 'addedAt' | 'lastSyncedAt'>[]): Promise<void> {
-  const state = await getState()
+  await updateState(state => syncOrganizablesInto(state, items))
+}
+
+function syncOrganizablesInto(state: AppState, items: Omit<Organizable, 'id' | 'addedAt' | 'lastSyncedAt'>[]): void {
   const deleted = new Set(state.deletedYoutubeIds ?? [])
   let normalized = 0
 
@@ -407,5 +476,4 @@ export async function syncOrganizables(items: Omit<Organizable, 'id' | 'addedAt'
   }
 
   state.deletedYoutubeIds = [...deleted]
-  await setState(state)
 }
