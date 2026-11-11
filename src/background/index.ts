@@ -3,17 +3,24 @@ import * as db from '../shared/db'
 import type { MessageType, MessageResponse } from '../shared/types'
 import { handleWatchMessage, isWatchMessage } from './watch-history'
 import { pollNewVideos, fetchFolderFeed, fetchHomeFeed } from './channel-poller'
-import { getAIConfig, saveAIConfig, sanitizeConfig, OPENAI_OAUTH_BASE_URL } from '../shared/ai/storage'
+import { getAIConfig, saveAIConfig, sanitizeConfig, purgeLegacyAIStorage, OPENAI_OAUTH_BASE_URL } from '../shared/ai/storage'
 import { beginDeviceAuth } from '../shared/ai/device-auth'
 import { exchangeDeviceCode, validTokens } from './ai/openai-oauth'
 import { listModels as aiListModels, testProvider } from './ai'
 import { categorize } from './ai/categorize'
 import type { AIProvider } from '../shared/ai/types'
 import {
+  endpointProblem,
   normalizeEndpointUrl,
   originFromUrl,
   type PermissionOutcome,
 } from '../shared/ai/host-permission'
+
+// A config antiga de IA (com a chave) saía de chrome.storage.local — legível pelo
+// content script. A migração roda a cada partida do worker, não só na instalação.
+void purgeLegacyAIStorage().catch(err => {
+  console.error('[MyTube] AI credential migration failed:', err)
+})
 
 const ALARM_NAME = 'rss-poll'
 const ALARM_PERIOD_MINUTES = 30
@@ -99,6 +106,8 @@ function getErrorFallback(type: MessageType['type']): unknown {
       return { providers: [], activeProviderId: null }
     case 'AI_LIST_MODELS':
       return []
+    case 'AI_SAVE_PROVIDER':
+      return { ok: false, error: 'internal-error' }
     case 'AI_TEST_PROVIDER':
       return { ok: false, error: 'internal-error' }
     case 'AI_OAUTH_BEGIN':
@@ -192,6 +201,22 @@ chrome.windows.onRemoved.addListener(windowId => {
     if (pending.windowId === windowId) settleHostPermission(requestId, 'denied')
   }
 })
+
+/**
+ * Veio de uma página da extensão (aikey/, dashboard, permission) e não de um
+ * content script? O content script tem o mesmo `sender.id`, mas `sender.url` é a
+ * página do youtube.com; só página da extensão tem URL no esquema da extensão.
+ */
+function isExtensionPage(sender: chrome.runtime.MessageSender): boolean {
+  return sender.id === chrome.runtime.id
+    && typeof sender.url === 'string'
+    && sender.url.startsWith(chrome.runtime.getURL(''))
+}
+
+/** Forma comparável de um endereço: "https://X/v1" e "https://x/v1" são o mesmo destino. */
+function comparableUrl(raw: string): string {
+  return normalizeEndpointUrl(raw) ?? raw.trim()
+}
 
 async function handleMessage(
   message: MessageType,
@@ -363,22 +388,73 @@ async function handleMessage(
     }
 
     case 'AI_SAVE_PROVIDER': {
+      const incoming = message.payload
+      // A chave só entra por uma página da extensão (aikey/). O content script
+      // do youtube.com — onde a sidebar roda — nunca a digita nem a manda.
+      if ((incoming.apiKey || incoming.tokens) && !isExtensionPage(sender)) {
+        return { ok: false, error: 'forbidden-sender' }
+      }
       const config = await getAIConfig()
-      const idx = config.providers.findIndex(p => p.id === message.payload.id)
-      if (idx === -1) config.providers.push(message.payload)
-      else {
-        // A UI nunca vê credencial, então um save vindo dela (ex.: seletor de
-        // modelo) chega sem apiKey/tokens — preserva a que já está guardada.
-        const prev = config.providers[idx]
-        config.providers[idx] = {
-          ...message.payload,
-          apiKey: message.payload.apiKey ?? prev.apiKey,
-          tokens: message.payload.tokens ?? prev.tokens,
+      const idx = config.providers.findIndex(p => p.id === incoming.id)
+      const prev = idx === -1 ? undefined : config.providers[idx]
+      // Só o device flow (AI_OAUTH_COMPLETE) cria provedor OAuth; um save nunca
+      // cria nem muda o tipo.
+      if (!prev && incoming.kind !== 'api-key') return { ok: false, error: 'forbidden-kind' }
+      // Um save nunca cria por engano: id desconhecido só passa com intenção explícita
+      // de criar (o fluxo Adicionar). Sem isto, salvar numa janela de chave aberta
+      // antes de o provedor ser removido na sidebar o recriaria.
+      if (!prev && incoming.intent !== 'create') return { ok: false, error: 'provider-not-found' }
+
+      let record: AIProvider
+      if (prev?.kind === 'openai-oauth') {
+        // Endereço e tokens do OAuth são fixos: rótulo e modelo são tudo o que um save muda.
+        record = {
+          ...prev,
+          label: incoming.label,
+          model: incoming.model !== undefined ? incoming.model : prev.model,
+          baseUrl: OPENAI_OAUTH_BASE_URL,
+        }
+      } else {
+        // O endereço é validado AQUI, não só no formulário: o worker é quem envia a
+        // credencial. Um endereço já gravado e inalterado passa mesmo que hoje seja
+        // recusado (provedor http:// antigo), para o seletor de modelo não quebrar.
+        const sameAsStored = prev !== undefined && comparableUrl(prev.baseUrl) === comparableUrl(incoming.baseUrl)
+        const normalized = sameAsStored ? prev.baseUrl : normalizeEndpointUrl(incoming.baseUrl)
+        if (!normalized) return { ok: false, error: endpointProblem(incoming.baseUrl) ?? 'invalid-url' }
+        // A credencial e o modelo pertencem ao DESTINO para o qual foram dados:
+        // trocou o endereço, perdem o dono — a não ser que o mesmo save traga uma
+        // chave nova. Sem isto, um save com o id de um provedor existente e a URL
+        // de outro servidor faria o worker mandar a chave guardada para lá.
+        const rebound = prev !== undefined && !sameAsStored
+        const apiKey = incoming.apiKey || (rebound ? undefined : prev?.apiKey)
+        record = {
+          id: incoming.id,
+          label: incoming.label,
+          kind: 'api-key',
+          baseUrl: normalized,
+          model: rebound ? null : incoming.model !== undefined ? incoming.model : prev?.model ?? null,
+          ...(apiKey ? { apiKey } : {}),
         }
       }
-      if (!config.activeProviderId) config.activeProviderId = message.payload.id
+
+      if (idx === -1) config.providers.push(record)
+      else config.providers[idx] = record
+      if (!config.activeProviderId) config.activeProviderId = record.id
       await saveAIConfig(config)
       return { ok: true }
+    }
+
+    case 'AI_OPEN_KEY_PAGE': {
+      const provider = message.payload.id ? `?provider=${encodeURIComponent(message.payload.id)}` : ''
+      try {
+        await chrome.windows.create({
+          url: chrome.runtime.getURL(`aikey/index.html${provider}`),
+          type: 'popup', width: 480, height: 560, focused: true,
+        })
+        return { ok: true }
+      } catch {
+        return { ok: false, error: 'cannot-open' }
+      }
     }
 
     case 'AI_DELETE_PROVIDER': {

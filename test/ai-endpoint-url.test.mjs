@@ -17,7 +17,9 @@ assert.equal(normalizeEndpointUrl('172.32.1.1:8080'), 'https://172.32.1.1:8080/'
 
 // ── 3. esquema explícito é respeitado ────────────────────────────────────────
 assert.equal(normalizeEndpointUrl('https://openrouter.ai/api/v1'), 'https://openrouter.ai/api/v1')
-assert.equal(normalizeEndpointUrl('http://api.exemplo.com/v1'), 'http://api.exemplo.com/v1')
+// http:// explícito só vale para host privado/loopback (test/ai-endpoint-cleartext.test.mjs).
+assert.equal(normalizeEndpointUrl('http://api.exemplo.com/v1'), null)
+assert.equal(normalizeEndpointUrl('http://192.168.0.9:1234/v1'), 'http://192.168.0.9:1234/v1')
 assert.equal(normalizeEndpointUrl('  https://openrouter.ai/api/v1  '), 'https://openrouter.ai/api/v1', 'espaço em volta não invalida')
 
 // ── 4. entrada inválida é inválida, e não se disfarça de outra coisa ─────────

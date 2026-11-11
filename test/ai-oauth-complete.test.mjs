@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import 'fake-indexeddb/auto'
+import FDBObjectStore from 'fake-indexeddb/lib/FDBObjectStore'
 import { t } from '../src/shared/i18n.ts'
 
 // INVARIANTE: falha na troca do código nunca produz estado vazio silencioso.
@@ -8,7 +10,13 @@ const AI_KEY = 'mytube-ai-providers'
 const store = {}
 let listener = null
 let fetchImpl = null
-let setImpl = null
+// Falha de gravação simulada no IndexedDB, onde a config mora agora.
+let failWrites = false
+const realPut = FDBObjectStore.prototype.put
+FDBObjectStore.prototype.put = function (...args) {
+  if (failWrites) throw new Error('storage indisponível')
+  return realPut.apply(this, args)
+}
 
 const noopEvent = { addListener() {} }
 globalThis.chrome = {
@@ -27,16 +35,15 @@ globalThis.chrome = {
     local: {
       // chrome.storage serializa: o handler nunca recebe a referência do store.
       async get(key) { return key in store ? { [key]: structuredClone(store[key]) } : {} },
-      async set(obj) {
-        if (setImpl) return setImpl(obj)
-        for (const [k, v] of Object.entries(obj)) store[k] = structuredClone(v)
-      },
+      async set(obj) { for (const [k, v] of Object.entries(obj)) store[k] = structuredClone(v) },
+      async remove(key) { delete store[key] },
     },
   },
 }
 globalThis.fetch = (...args) => fetchImpl(...args)
 
 await import('../src/background/index.ts')
+const { getAIConfig } = await import('../src/shared/ai/storage.ts')
 assert.equal(typeof listener, 'function', 'o roteador não registrou chrome.runtime.onMessage')
 
 function send(message) {
@@ -55,14 +62,14 @@ assert.equal(
   'falha na troca respondeu sem código de erro — a UI limpa o painel e não mostra nada'
 )
 assert.equal(falha.error, 'oauth-exchange-failed')
-assert.equal(store[AI_KEY], undefined, 'gravou provedor apesar de a troca ter falhado')
+assert.equal((await getAIConfig()).providers.length, 0, 'gravou provedor apesar de a troca ter falhado')
 
 // 2. erro fora da troca (storage indisponível) → fallback do roteador ainda traz código
 fetchImpl = async () => ({
   ok: true, status: 200,
   async json() { return { access_token: 'AT-TESTE', refresh_token: 'RT-TESTE' } },
 })
-setImpl = async () => { throw new Error('storage indisponível') }
+failWrites = true
 const interna = await send(MSG)
 assert.equal(interna.ok, false)
 assert.equal(
@@ -71,20 +78,22 @@ assert.equal(
 )
 // getAIConfig nunca devolve estado compartilhado entre chamadas: se a gravação falha,
 // nada é observável depois — store vazio implica AI_LIST_PROVIDERS vazio.
-assert.equal(store[AI_KEY], undefined, 'gravou provedor apesar de o save ter falhado')
+assert.equal((await getAIConfig()).providers.length, 0, 'gravou provedor apesar de o save ter falhado')
 assert.deepEqual(
   await send({ type: 'AI_LIST_PROVIDERS' }),
   { providers: [], activeProviderId: null },
   'save falhou mas a UI ainda lista o provedor — getAIConfig devolveu o default compartilhado e o handler o mutou'
 )
-setImpl = null
+failWrites = false
 
 // 3. caminho feliz continua gravando o provedor OAuth
 const sucesso = await send(MSG)
 assert.equal(sucesso.ok, true)
-assert.equal(store[AI_KEY].providers.length, 1)
-assert.equal(store[AI_KEY].providers[0].kind, 'openai-oauth')
-assert.equal(store[AI_KEY].providers[0].tokens.accessToken, 'AT-TESTE')
+const gravado = (await getAIConfig()).providers
+assert.equal(gravado.length, 1)
+assert.equal(gravado[0].kind, 'openai-oauth')
+assert.equal(gravado[0].tokens.accessToken, 'AT-TESTE')
+assert.equal(AI_KEY in store, false, 'o token OAuth foi parar no chrome.storage.local')
 
 // 4. o código de erro tem tradução nos dois idiomas (a UI mostra texto, não código)
 for (const lang of ['en', 'pt-BR']) {

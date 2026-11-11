@@ -7,7 +7,7 @@ A Chrome extension that lets you sort your YouTube subscriptions, playlists and 
 [![CI](https://github.com/pedroberaldo87/MyTube/actions/workflows/ci.yml/badge.svg)](https://github.com/pedroberaldo87/MyTube/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 ![Chrome Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4)
-![Node 20+](https://img.shields.io/badge/node-%3E%3D20-339933)
+![Node 22+](https://img.shields.io/badge/node-%3E%3D22-339933)
 
 <p align="center">
   <img src="docs/screenshots/sidebar-void-theme.png" width="30%" alt="MyTube sidebar open on YouTube with the Void theme: six folders and a library list" />
@@ -40,7 +40,7 @@ All screenshots use made-up channels and folders.
 
 MyTube is not on the Chrome Web Store, so you build it and load it yourself. It takes about two minutes.
 
-You need [Node.js](https://nodejs.org) 20 or newer (`node -v` to check), git and Chrome.
+You need [Node.js](https://nodejs.org) 22 or newer (`node -v` to check), git and Chrome.
 
 ### 1. Build
 
@@ -129,7 +129,7 @@ Filing hundreds of subscriptions by hand is the boring part. Connect a model and
 **Connecting.** Open the sidebar, click the gear, then go to **AI**. Two options:
 
 - **Your ChatGPT account**: approve a device code on openai.com. No API key involved.
-- **Any OpenAI-compatible endpoint**: your own base URL and key. A local Ollama, LM Studio, vLLM, OpenRouter, or OpenAI itself. Chrome asks for permission to that host when you save it.
+- **Any OpenAI-compatible endpoint**: your own base URL and key. A local Ollama, LM Studio, vLLM, OpenRouter, or OpenAI itself. **Add endpoint** opens a separate MyTube window, so the key is typed there and never on the YouTube page. Chrome asks for permission to that host when you save it. Plain `http://` is accepted only for this computer and private networks (localhost, 192.168.x.x, 10.x.x.x, Tailscale); any other server needs `https://`. Changing a saved endpoint's address removes its saved key and model, so type the key again.
 
 Then use **Test connection** to pick a model.
 
@@ -153,7 +153,6 @@ Chrome shows a broad-sounding list. Here is what each entry is for and what is *
 | Permission | Why |
 |---|---|
 | `storage`, `unlimitedStorage` | Your folders, tags and watch history, in the browser. `unlimitedStorage` only lifts the 5 MB quota, which a large library exceeds |
-| `tabs` | Telling the sidebar to open when you click the toolbar icon |
 | `alarms` | Scheduling the check for new uploads |
 | `https://www.youtube.com/*`, `https://youtube.com/*` | The sidebar itself: it is a content script injected into YouTube |
 | `https://auth.openai.com/*`, `https://chatgpt.com/backend-api/*` | Only used if you connect a ChatGPT account: the device-code flow and the inference endpoint |
@@ -164,7 +163,8 @@ Chrome shows a broad-sounding list. Here is what each entry is for and what is *
 
 - **Content scripts** (`src/content/`) inject the sidebar and feed overlays into youtube.com, built with Preact inside Shadow DOM roots. A small MAIN-world script (`page-bridge.ts`) reads YouTube's own page data.
 - **Service worker** (`src/background/`) owns storage access, polls channel pages for new uploads every 30 minutes via an alarm, and makes all AI calls. Credentials never leave it.
-- **Storage**: folders, tags and library items in `chrome.storage.local`; watch history and new-video checks in IndexedDB (via `idb`).
+- **API key window** (`src/aikey/`) is an extension page, opened as a small popup window. It is the only place an API key is typed.
+- **Storage**: folders, tags and library items in `chrome.storage.local`; watch history, new-video checks and the AI providers (with their API keys and ChatGPT tokens) in the extension's IndexedDB (via `idb`). Scripts on youtube.com can read `chrome.storage.local` but cannot open the extension's IndexedDB, which is why the credentials live there.
 - **Dashboard** (`src/dashboard/`) is the extension's options page.
 - `build.ts` is the real build entry point (`vite.config.ts` only serves `npm run dev`). It bundles each part separately and writes `dist/manifest.json`.
 

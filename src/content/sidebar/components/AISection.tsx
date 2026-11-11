@@ -2,7 +2,6 @@ import { h } from 'preact'
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
 import { sendMessage } from '../../../shared/messages'
 import { useT } from '../../../shared/i18n'
-import { ensureHostPermission, normalizeEndpointUrl, type PermissionOutcome } from '../../../shared/ai/host-permission'
 import type { AIConfigPublic, AIProviderPublic } from '../../../shared/ai/types'
 import {
   cancelDeviceFlow,
@@ -12,57 +11,29 @@ import {
   subscribeDeviceFlow,
   type DeviceFlowState,
 } from '../deviceFlow'
-import { optionBtnStyle, rowStyle, sectionStyle, sectionTitleStyle } from './SettingsPanel'
+import { optionBtnStyle, sectionStyle, sectionTitleStyle } from './SettingsPanel'
 
 /**
- * A configuração de IA INTEIRA, dentro do painel da engrenagem: a interface do
- * app é a sidebar. Listar, ativar, testar, escolher modelo, editar, remover,
- * adicionar por chave e conectar conta ChatGPT acontecem aqui — nada de botão
- * que leve o usuário para fora.
+ * A configuração de IA dentro do painel da engrenagem: listar, ativar, testar,
+ * escolher modelo, remover e conectar conta ChatGPT acontecem aqui.
  *
- * O único passo que a sidebar não consegue dar sozinha é o ACEITE de permissão
- * de host: no mundo isolado do content script `chrome.permissions` é undefined.
- * Esse clique vira uma janelinha própria (ensureHostPermission despacha para o
- * background e espera o desfecho real), e o fluxo continua aqui.
+ * O que NÃO acontece aqui é digitar a chave de API. A sidebar vive no DOM do
+ * youtube.com, onde um script da página alcança qualquer campo que ela renderize.
+ * Adicionar e editar um endpoint abrem uma janela da EXTENSÃO (src/aikey/), que
+ * também pede a permissão de host — lá `chrome.permissions` existe. A sidebar só
+ * mostra o estado (credencial guardada ou não) e, ao voltar o foco, recarrega.
  *
  * Nenhum segredo chega nesta árvore: o background só devolve AIProviderPublic,
  * onde a credencial é o booleano `hasCredential`.
  */
 
-interface FormState {
-  /** null = novo provedor; string = editando o de mesmo id. */
-  id: string | null
-  label: string
-  baseUrl: string
-  /** Vazio ao editar significa "manter a chave atual". */
-  apiKey: string
-}
-
-/**
- * Um formulário de EDIÇÃO fica órfão quando o provedor que ele edita sai da
- * lista (removido na linha ao lado, que continua clicável). Salvar um órfão
- * mandaria um id que já não existe, e o background trata id desconhecido como
- * criação: ressuscitaria o provedor SEM a chave e o promoveria a ativo.
- * O formulário de provedor NOVO (id null) nunca é órfão — fechá-lo apagaria
- * digitação.
- */
-export function formTargetGone(
-  form: Pick<FormState, 'id'> | null,
-  providers: readonly Pick<AIProviderPublic, 'id'>[],
-): boolean {
-  const id = form?.id
-  if (!id) return false
-  return !providers.some(p => p.id === id)
-}
-
 export function AISection() {
   const t = useT()
   const [config, setConfig] = useState<AIConfigPublic>({ providers: [], activeProviderId: null })
   const [flow, setFlow] = useState<DeviceFlowState>(getDeviceFlowState)
-  const [formError, setFormError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [testing, setTesting] = useState<Record<string, string>>({})
   const [models, setModels] = useState<Record<string, string[] | 'loading'>>({})
-  const [form, setForm] = useState<FormState | null>(null)
   /** Guarda de in-flight por ação: sem ela, duplo clique em Salvar cria dois provedores. */
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   /**
@@ -77,25 +48,14 @@ export function AISection() {
 
   const run = useCallback(async (key: string, fn: () => Promise<void>) => {
     if (busy[key]) return
+    // O erro de uma ação não sobrevive à ação seguinte: ele fala do clique que o causou.
+    setActionError(null)
     setBusy(prev => ({ ...prev, [key]: true }))
     try { await fn() } finally { setBusy(prev => ({ ...prev, [key]: false })) }
   }, [busy])
 
   const reload = useCallback(async () => {
-    const next = await sendMessage({ type: 'AI_LIST_PROVIDERS' })
-    setConfig(next)
-    // Só o formulário que perdeu o alvo fecha; o resto (inclusive o de provedor
-    // novo) sobrevive à recarga com o que já foi digitado.
-    let orphan = false
-    setForm(prev => {
-      orphan = formTargetGone(prev, next.providers)
-      return orphan ? null : prev
-    })
-    // O erro é DO formulário e morre com ele: fechar o órfão sem apagá-lo deixa
-    // a linha vermelha acusando um campo que saiu da tela, colada no resultado
-    // da ação que fechou o formulário (o Remover, que deu certo). Só aqui —
-    // zerar em toda recarga apagaria o erro da ação que acabou de acontecer.
-    if (orphan) setFormError(null)
+    setConfig(await sendMessage({ type: 'AI_LIST_PROVIDERS' }))
   }, [])
 
   // O background devolve código de erro, nunca texto — a tradução é aqui.
@@ -107,14 +67,6 @@ export function AISection() {
       case 'internal-error': return t('ai.errInternal')
       case 'device-expired': return t('ai.deviceExpired')
       default: return code
-    }
-  }, [t])
-
-  const permissionText = useCallback((outcome: PermissionOutcome) => {
-    switch (outcome) {
-      case 'invalid-url': return t('ai.errInvalidUrl')
-      case 'cannot-request': return t('ai.errCannotRequest')
-      default: return t('ai.errPermissionDenied')
     }
   }, [t])
 
@@ -131,59 +83,44 @@ export function AISection() {
   }, [reload])
 
   const connectChatGPT = useCallback(() => {
-    setFormError(null)
+    setActionError(null)
     void startDeviceFlow()
   }, [])
 
-  const saveProvider = useCallback(() => run('save', async () => {
-    if (!form) return
-    setFormError(null)
+  /**
+   * Provedor cuja janela de chave foi aberta daqui ('*' = um novo). Quando o foco
+   * volta para esta página, o que foi medido para ele (resultado de teste, lista
+   * de modelos) pode ser de outro endereço ou de outra chave: é descartado.
+   */
+  const pendingKeyWindow = useRef<string | null>(null)
+
+  const openKeyPage = useCallback((id: string | null) => run('keypage', async () => {
+    setActionError(null)
     clearDeviceFlowError()
-    // A permissão é pedida na PRIMEIRA operação depois do clique.
-    const outcome = await ensureHostPermission(form.baseUrl)
-    if (outcome !== 'granted') { setFormError(permissionText(outcome)); return }
-    const baseUrl = normalizeEndpointUrl(form.baseUrl)
-    if (!baseUrl) { setFormError(t('ai.errInvalidUrl')); return }
-    // O modelo é derivado do ENDEREÇO pelo mesmo motivo do resultado de teste
-    // abaixo: foi escolhido numa lista que AQUELE endpoint devolveu. Trocado o
-    // endereço, o modelo perde o dono e vai null — a linha volta a não afirmar
-    // modelo até um novo Testar listar os do servidor novo, em vez de exibir
-    // `novoEndereço · modeloAntigo` como configuração válida. A comparação é do
-    // normalizado contra o que está GRAVADO para este id, nunca contra o texto
-    // digitado: editar só o rótulo ou só a chave preserva o modelo.
-    // O valor preservado sai do MESMO objeto, e é por isso que o formulário não
-    // carrega modelo nenhum: um snapshot tirado no clique em Editar envelhece,
-    // porque o combo da linha fica na tela junto do formulário e pode gravar outro
-    // modelo depois — e aí um save que só trocava o rótulo reverteria em silêncio
-    // a escolha que o usuário acabou de fazer.
-    const stored = config.providers.find(p => p.id === form.id)
-    const model = stored && stored.baseUrl === baseUrl ? stored.model : null
-    await sendMessage({
-      type: 'AI_SAVE_PROVIDER',
-      payload: {
-        id: form.id ?? crypto.randomUUID(),
-        label: form.label.trim() || baseUrl,
-        kind: 'api-key',
-        baseUrl,
-        model,
-        // Chave vazia é omitida: o background preserva a que já está guardada.
-        ...(form.apiKey ? { apiKey: form.apiKey } : {}),
-      },
-    })
-    // Resultado de teste e lista de modelos são derivados do ENDEREÇO e da
-    // credencial, não do id: como o id sobrevive à edição, sem isto a linha
-    // continuaria afirmando "Conectado" sobre um endpoint que ninguém testou e
-    // oferecendo modelos do servidor antigo. Não se compara URL — a chave, que
-    // nem aparece aqui, também invalida um resultado.
-    const savedId = form.id
-    if (savedId) {
-      generation.current[savedId] = (generation.current[savedId] ?? 0) + 1
-      setTesting(prev => { const next = { ...prev }; delete next[savedId]; return next })
-      setModels(prev => { const next = { ...prev }; delete next[savedId]; return next })
+    pendingKeyWindow.current = id ?? '*'
+    const r = await sendMessage({ type: 'AI_OPEN_KEY_PAGE', payload: { id } })
+    if (!r.ok) {
+      pendingKeyWindow.current = null
+      setActionError(t('ai.errCannotOpenKeyPage'))
     }
-    setForm(null)
-    await reload()
-  }), [config, form, permissionText, reload, run, t])
+  }), [run, t])
+
+  useEffect(() => {
+    const onFocus = () => {
+      const id = pendingKeyWindow.current
+      if (!id) return
+      pendingKeyWindow.current = null
+      // A geração invalida também uma resposta de teste ainda em voo.
+      if (id !== '*') {
+        generation.current[id] = (generation.current[id] ?? 0) + 1
+        setTesting(prev => { const next = { ...prev }; delete next[id]; return next })
+        setModels(prev => { const next = { ...prev }; delete next[id]; return next })
+      }
+      void reload()
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [reload])
 
   const test = useCallback((p: AIProviderPublic) => run(`test:${p.id}`, async () => {
     // Capturada ANTES do envio: se um save daquele id acontecer no meio, a resposta
@@ -258,7 +195,7 @@ export function AISection() {
           esta linha é literalmente o que sobra onde o código estava. */}
       {deviceError && <p style={S.error}>{deviceError}</p>}
 
-      {config.providers.length === 0 && !flow.start && !form && (
+      {config.providers.length === 0 && !flow.start && (
         <p style={S.empty}>{t('ai.empty')}</p>
       )}
 
@@ -295,7 +232,8 @@ export function AISection() {
               {p.kind === 'api-key' && (
                 <button
                   style={btnStyle(false)}
-                  onClick={() => { setFormError(null); clearDeviceFlowError(); setForm({ id: p.id, label: p.label, baseUrl: p.baseUrl, apiKey: '' }) }}
+                  disabled={busy['keypage']}
+                  onClick={() => openKeyPage(p.id)}
                 >
                   {t('ai.edit')}
                 </button>
@@ -305,6 +243,7 @@ export function AISection() {
             {/* Sem isso, um provedor gravado sem chave (ex.: save de um
                 formulário órfão) fica indistinguível de um configurado. */}
             {!p.hasCredential && <div style={S.warn}>{t('ai.noCredential')}</div>}
+            {p.hasCredential && <div style={S.meta}>{t('ai.keyConfigured')}</div>}
             {testing[p.id] && <div style={S.meta}>{testing[p.id]}</div>}
             {list === 'loading' && <div style={S.meta}>{t('ai.loadingModels')}</div>}
             {Array.isArray(list) && list.length === 0 && <div style={S.meta}>{t('ai.noModels')}</div>}
@@ -326,52 +265,21 @@ export function AISection() {
         )
       })}
 
-      {/* Colada no formulário, seu dono. Fora do ternário de propósito: dentro,
-          um erro gravado depois de o formulário fechar ficaria invisível. */}
-      {formError && <p style={S.error}>{formError}</p>}
+      {actionError && <p style={S.error}>{actionError}</p>}
 
-      {form ? (
-        <div style={S.providerRow}>
-          <label style={S.fieldBlock}>
-            <span style={S.label}>{t('ai.labelField')}</span>
-            <input style={S.input} value={form.label}
-              onInput={e => setForm({ ...form, label: (e.target as HTMLInputElement).value })} />
-            <span style={S.help}>{t('ai.labelHelp')}</span>
-          </label>
-          <label style={S.fieldBlock}>
-            <span style={S.label}>{t('ai.urlField')}</span>
-            <input style={S.input} value={form.baseUrl}
-              onInput={e => setForm({ ...form, baseUrl: (e.target as HTMLInputElement).value })} />
-            <span style={S.help}>{t('ai.urlHelp')}</span>
-          </label>
-          <label style={S.fieldBlock}>
-            <span style={S.label}>{t('ai.keyField')}</span>
-            <input style={S.input} type="password" value={form.apiKey}
-              onInput={e => setForm({ ...form, apiKey: (e.target as HTMLInputElement).value })} />
-            <span style={S.help}>{form.id ? t('ai.keyHelpEdit') : t('ai.keyHelp')}</span>
-          </label>
-          <div style={rowStyle}>
-            <button style={btnStyle(true)} disabled={busy['save']} onClick={saveProvider}>
-              {busy['save'] ? t('ai.saving') : t('ai.save')}
-            </button>
-            <button style={btnStyle(false)} onClick={() => { setForm(null); setFormError(null); clearDeviceFlowError() }}>{t('ai.cancel')}</button>
-          </div>
+      <div style={S.providerRow}>
+        <strong style={S.rowLabel}>{t('ai.addTitle')}</strong>
+        <div style={S.pathBlock}>
+          <p style={S.help}>{t('ai.pathOAuth')}</p>
+          <button style={btnStyle(true)} onClick={connectChatGPT}>{t('ai.connectChatGPT')}</button>
         </div>
-      ) : (
-        <div style={S.providerRow}>
-          <strong style={S.rowLabel}>{t('ai.addTitle')}</strong>
-          <div style={S.pathBlock}>
-            <p style={S.help}>{t('ai.pathOAuth')}</p>
-            <button style={btnStyle(true)} onClick={connectChatGPT}>{t('ai.connectChatGPT')}</button>
-          </div>
-          <div style={S.pathBlock}>
-            <p style={S.help}>{t('ai.pathApiKey')}</p>
-            <button style={btnStyle(false)} onClick={() => { setFormError(null); clearDeviceFlowError(); setForm({ id: null, label: '', baseUrl: '', apiKey: '' }) }}>
-              {t('ai.addEndpoint')}
-            </button>
-          </div>
+        <div style={S.pathBlock}>
+          <p style={S.help}>{t('ai.pathApiKey')}</p>
+          <button style={btnStyle(false)} disabled={busy['keypage']} onClick={() => openKeyPage(null)}>
+            {t('ai.addEndpoint')}
+          </button>
         </div>
-      )}
+      </div>
     </div>
   )
 }
