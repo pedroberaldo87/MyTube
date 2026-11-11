@@ -4,9 +4,10 @@ import type { AppState } from '../../shared/types'
 import { sendMessage } from '../../shared/messages'
 import { exportWatchHistory, importWatchHistory, replaceWatchHistory } from '../../shared/db'
 import { TagManager } from '../components/TagManager'
-import { sanitizeBackupCollections, repairState, type SanitizedBackup } from '../../shared/backup-validate'
+import { sanitizeBackupCollections, type SanitizedBackup } from '../../shared/backup-validate'
 import type { WatchEntry } from '../../shared/types'
 import { normalizeHistoryField, planHistoryReplace, restoreReplace } from '../../shared/restore'
+import { addTag, deleteTag, setState, updateState, updateTag } from '../../shared/storage'
 
 interface SettingsProps {
   appState: AppState
@@ -137,30 +138,28 @@ function ImportSection({ onRefresh }: { onRefresh: () => Promise<void> }) {
         await restoreReplace(
           importData.historyReplacement,
           replaceWatchHistory,
-          () => chrome.storage.local.set({ mytube_state: newState }),
+          () => setState(newState),
         )
       } else {
         // Merge: add each organizable — background deduplicates by youtubeId
         for (const item of importData.organizables) {
           await sendMessage({ type: 'ADD_ORGANIZABLE', payload: item })
         }
-        // Merge folders and tags via direct storage (no background message for those)
-        const result = await chrome.storage.local.get('mytube_state')
-        const existing = repairState(result['mytube_state'])
+        // Merge folders and tags in one read-modify-write that re-reads inside
+        // the lock (no background message for those)
+        await updateState(existing => {
+          // Merge folders (deduplicate by id)
+          const folderIds = new Set(existing.folders.map((f: AppState['folders'][number]) => f.id))
+          for (const folder of importData.folders) {
+            if (!folderIds.has(folder.id)) existing.folders.push(folder)
+          }
 
-        // Merge folders (deduplicate by id)
-        const folderIds = new Set(existing.folders.map((f: AppState['folders'][number]) => f.id))
-        for (const folder of importData.folders) {
-          if (!folderIds.has(folder.id)) existing.folders.push(folder)
-        }
-
-        // Merge tags (deduplicate by id)
-        const tagIds = new Set(existing.tags.map((t: AppState['tags'][number]) => t.id))
-        for (const tag of importData.tags) {
-          if (!tagIds.has(tag.id)) existing.tags.push(tag)
-        }
-
-        await chrome.storage.local.set({ mytube_state: existing })
+          // Merge tags (deduplicate by id)
+          const tagIds = new Set(existing.tags.map((t: AppState['tags'][number]) => t.id))
+          for (const tag of importData.tags) {
+            if (!tagIds.has(tag.id)) existing.tags.push(tag)
+          }
+        })
       }
 
       // Merge acrescenta o histórico; o "Replace" já trocou o dele acima.
@@ -290,11 +289,7 @@ export function Settings({ appState, onRefresh }: SettingsProps) {
 
   const handleAddTag = async (name: string, color: string) => {
     try {
-      const result = await chrome.storage.local.get('mytube_state')
-      type RawState = { organizables: unknown[]; folders: unknown[]; tags: AppState['tags'] }
-      const state = (result['mytube_state'] as RawState | undefined) ?? { organizables: [], folders: [], tags: [] }
-      state.tags.push({ id: crypto.randomUUID(), name, color })
-      await chrome.storage.local.set({ mytube_state: state })
+      await addTag(name, color)
       await onRefresh()
     } catch (err) {
       console.error('[Dashboard] Failed to add tag:', err)
@@ -303,11 +298,7 @@ export function Settings({ appState, onRefresh }: SettingsProps) {
 
   const handleUpdateTag = async (updated: AppState['tags'][number]) => {
     try {
-      const result = await chrome.storage.local.get('mytube_state')
-      type RawState = { organizables: unknown[]; folders: unknown[]; tags: AppState['tags'] }
-      const state = (result['mytube_state'] as RawState | undefined) ?? { organizables: [], folders: [], tags: [] }
-      state.tags = state.tags.map(t => t.id === updated.id ? updated : t)
-      await chrome.storage.local.set({ mytube_state: state })
+      await updateTag(updated)
       await onRefresh()
     } catch (err) {
       console.error('[Dashboard] Failed to update tag:', err)
@@ -316,15 +307,7 @@ export function Settings({ appState, onRefresh }: SettingsProps) {
 
   const handleDeleteTag = async (id: string) => {
     try {
-      const result = await chrome.storage.local.get('mytube_state')
-      type RawState = { organizables: AppState['organizables']; folders: unknown[]; tags: AppState['tags'] }
-      const state = (result['mytube_state'] as RawState | undefined) ?? { organizables: [], folders: [], tags: [] }
-      state.tags = state.tags.filter(t => t.id !== id)
-      state.organizables = state.organizables.map(o => ({
-        ...o,
-        tagIds: o.tagIds.filter(tid => tid !== id),
-      }))
-      await chrome.storage.local.set({ mytube_state: state })
+      await deleteTag(id)
       await onRefresh()
     } catch (err) {
       console.error('[Dashboard] Failed to delete tag:', err)

@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'preact/hooks'
 import type { AppState, FeedVideo, Folder } from '../../shared/types'
 import { sendMessage } from '../../shared/messages'
 import { safeImageSrc, safeYouTubeHref } from '../../shared/backup-validate'
+import { addFolder, deleteFolder, renameFolder } from '../../shared/storage'
 
 interface FoldersProps {
   appState: AppState
@@ -152,17 +153,9 @@ function FolderRow({ folder, allFolders, itemCount, depth, onRefresh }: FolderRo
       // updateFolder is not exposed via messages — call storage directly from dashboard
       // since dashboard has same extension origin access to chrome.storage
     }
-    // Direct storage update (dashboard runs in extension context)
+    // Shared storage helper: re-reads inside its lock, so only name/color change
     try {
-      const result = await chrome.storage.local.get('mytube_state')
-      type RawState = { organizables: unknown[]; folders: Folder[]; tags: unknown[] }
-      const state = result['mytube_state'] as RawState | undefined
-      if (state) {
-        state.folders = state.folders.map((f: Folder) =>
-          f.id === folder.id ? { ...f, name: trimmed, color: editColor } : f
-        )
-        await chrome.storage.local.set({ mytube_state: state })
-      }
+      await renameFolder(folder.id, trimmed, editColor)
     } catch (err) {
       console.error('[Dashboard] Failed to update folder:', err)
     }
@@ -175,18 +168,7 @@ function FolderRow({ folder, allFolders, itemCount, depth, onRefresh }: FolderRo
   const handleDelete = async () => {
     if (!confirmDelete) { setConfirmDelete(true); return }
     try {
-      const result = await chrome.storage.local.get('mytube_state')
-      type RawState = { organizables: Array<{ folderId: string | null }>; folders: Folder[]; tags: unknown[] }
-      const state = result['mytube_state'] as RawState | undefined
-      if (state) {
-        const idsToDelete = collectDescendantIds(folder.id, state.folders)
-        idsToDelete.add(folder.id)
-        state.folders = state.folders.filter((f: Folder) => !idsToDelete.has(f.id))
-        state.organizables = state.organizables.map(o =>
-          o.folderId !== null && idsToDelete.has(o.folderId) ? { ...o, folderId: null } : o
-        )
-        await chrome.storage.local.set({ mytube_state: state })
-      }
+      await deleteFolder(folder.id)
     } catch (err) {
       console.error('[Dashboard] Failed to delete folder:', err)
     }
@@ -198,22 +180,7 @@ function FolderRow({ folder, allFolders, itemCount, depth, onRefresh }: FolderRo
     if (!trimmed) return
     setSaving(true)
     try {
-      const result = await chrome.storage.local.get('mytube_state')
-      type RawState = { organizables: unknown[]; folders: Folder[]; tags: unknown[] }
-      const state = result['mytube_state'] as RawState | undefined
-      if (state) {
-        const siblings = state.folders.filter((f: Folder) => f.parentId === folder.id)
-        const maxOrder = siblings.reduce((m: number, f: Folder) => Math.max(m, f.order), -1)
-        const newFolder: Folder = {
-          id: crypto.randomUUID(),
-          name: trimmed,
-          parentId: folder.id,
-          color: newChildColor,
-          order: maxOrder + 1,
-        }
-        state.folders.push(newFolder)
-        await chrome.storage.local.set({ mytube_state: state })
-      }
+      await addFolder(trimmed, folder.id, newChildColor)
     } catch (err) {
       console.error('[Dashboard] Failed to create subfolder:', err)
     }
@@ -382,19 +349,6 @@ function FolderRow({ folder, allFolders, itemCount, depth, onRefresh }: FolderRo
   )
 }
 
-function collectDescendantIds(folderId: string, allFolders: Folder[]): Set<string> {
-  const set = new Set<string>()
-  const queue = [folderId]
-  while (queue.length > 0) {
-    const id = queue.shift()!
-    allFolders.filter(f => f.parentId === id).forEach(f => {
-      set.add(f.id)
-      queue.push(f.id)
-    })
-  }
-  return set
-}
-
 export function Folders({ appState, onRefresh }: FoldersProps) {
   const { folders, organizables } = appState
 
@@ -418,22 +372,7 @@ export function Folders({ appState, onRefresh }: FoldersProps) {
     if (!trimmed) return
     setSaving(true)
     try {
-      const result = await chrome.storage.local.get('mytube_state')
-      type RawState = { organizables: unknown[]; folders: Folder[]; tags: unknown[] }
-      const state = result['mytube_state'] as RawState | undefined
-      if (state) {
-        const rootSiblings = state.folders.filter((f: Folder) => f.parentId === null)
-        const maxOrder = rootSiblings.reduce((m: number, f: Folder) => Math.max(m, f.order), -1)
-        const newFolder: Folder = {
-          id: crypto.randomUUID(),
-          name: trimmed,
-          parentId: null,
-          color: newRootColor,
-          order: maxOrder + 1,
-        }
-        state.folders.push(newFolder)
-        await chrome.storage.local.set({ mytube_state: state })
-      }
+      await addFolder(trimmed, null, newRootColor)
     } catch (err) {
       console.error('[Dashboard] Failed to create folder:', err)
     }
