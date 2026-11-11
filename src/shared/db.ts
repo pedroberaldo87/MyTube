@@ -177,6 +177,28 @@ export async function importWatchHistory(entries: WatchEntry[]): Promise<void> {
   await tx.done
 }
 
+/**
+ * Troca o histórico inteiro pelo do backup, em UMA transação: se uma entrada não
+ * puder ser gravada, a transação é abortada e o histórico anterior continua lá.
+ * Usa o getDB() (nome e versão num lugar só): abrir o banco com versão fixa em
+ * outro arquivo quebra com VersionError a cada migração.
+ */
+export async function replaceWatchHistory(entries: WatchEntry[]): Promise<void> {
+  const db = await getDB()
+  const tx = db.transaction('watchHistory', 'readwrite')
+  try {
+    await tx.store.clear()
+    for (const entry of entries) {
+      await tx.store.add(entry)
+    }
+  } catch (err) {
+    try { tx.abort() } catch { /* já encerrada */ }
+    await tx.done.catch(() => undefined)
+    throw err
+  }
+  await tx.done
+}
+
 // ── Credenciais de IA (store só do service worker / páginas da extensão) ──────
 
 const AI_CONFIG_KEY = 'config'
