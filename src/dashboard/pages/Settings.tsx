@@ -4,7 +4,7 @@ import type { AppState } from '../../shared/types'
 import { sendMessage } from '../../shared/messages'
 import { exportWatchHistory, importWatchHistory } from '../../shared/db'
 import { TagManager } from '../components/TagManager'
-import { sanitizeBackupCollections, sanitizeState, type SanitizedBackup } from '../../shared/backup-validate'
+import { sanitizeBackupCollections, repairState, type SanitizedBackup } from '../../shared/backup-validate'
 
 interface SettingsProps {
   appState: AppState
@@ -132,7 +132,7 @@ function ImportSection({ onRefresh }: { onRefresh: () => Promise<void> }) {
         }
         // Merge folders and tags via direct storage (no background message for those)
         const result = await chrome.storage.local.get('mytube_state')
-        const existing = sanitizeState(result['mytube_state'])
+        const existing = repairState(result['mytube_state'])
 
         // Merge folders (deduplicate by id)
         const folderIds = new Set(existing.folders.map((f: AppState['folders'][number]) => f.id))

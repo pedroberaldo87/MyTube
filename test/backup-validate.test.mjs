@@ -5,7 +5,7 @@ import {
   safeYouTubeHref,
   safeImageSrc,
   sanitizeBackupCollections,
-  sanitizeState,
+  repairState,
   sanitizeWatchEntries,
   collectWatchedVideoIds,
 } from '../src/shared/backup-validate.ts'
@@ -112,7 +112,8 @@ for (const ok of ['https://www.youtube.com/@exemplo', 'https://youtube.com/@exem
 
 for (const t of ['https://evil.example/p.png', 'http://i.ytimg.com/vi/a/b.jpg', 'javascript:alert(1)',
   'data:image/svg+xml,<svg onload=alert(1)>', 'https://i.ytimg.com.evil.example/a.jpg',
-  'https://127.0.0.1:8080/x', 'https://www.youtube.com/a.jpg', 42, null, {}]) {
+  'https://127.0.0.1:8080/x', 'https://www.youtube.com/a.jpg', 'https://evilytimg.com/a.jpg',
+  'https://ytimg.com.evil.example/a.jpg', 'https://googleusercontent.com.evil.example/a.jpg', 'https://sites.googleusercontent.com/a.jpg', 'https://lh.googleusercontent.com/a.jpg', 42, null, {}]) {
   assert.equal(isYouTubeImageUrl(t), false, `isYouTubeImageUrl aceitou ${JSON.stringify(t)}`)
   assert.equal(safeImageSrc(t), undefined)
   const r = sanitizeBackupCollections({ ...backupReal(), organizables: [canal({ thumbnailUrl: t })] })
@@ -120,7 +121,8 @@ for (const t of ['https://evil.example/p.png', 'http://i.ytimg.com/vi/a/b.jpg', 
   assert.equal(r.organizables.length, 1, 'thumbnail inválida não derruba o item')
   assert.equal(r.organizables[0].thumbnailUrl, '')
 }
-for (const host of ['i.ytimg.com', 'i9.ytimg.com', 'yt3.ggpht.com', 'yt3.googleusercontent.com']) {
+for (const host of ['i.ytimg.com', 'i9.ytimg.com', 'i1.ytimg.com', 's.ytimg.com', 'yt3.ggpht.com', 'yt4.ggpht.com',
+  'yt3.googleusercontent.com', 'lh3.googleusercontent.com', 'img.youtube.com']) {
   assert.equal(isYouTubeImageUrl(`https://${host}/vi/x/hq.jpg?a=b`), true, host)
 }
 assert.equal(
@@ -205,15 +207,15 @@ assert.equal(
   assert.equal({}.polluted, undefined)
 }
 
-// ── sanitizeState: o que sai do storage ─────────────────────────────────────
+// ── repairState: o que sai do storage (sem perda) ───────────────────────────
 
 {
-  const s = sanitizeState(undefined)
+  const s = repairState(undefined)
   assert.deepEqual(s, { organizables: [], folders: [], tags: [] })
   s.organizables.push(canal())
-  assert.deepEqual(sanitizeState(undefined).organizables, [], 'o estado vazio não pode ser compartilhado entre chamadas')
+  assert.deepEqual(repairState(undefined).organizables, [], 'o estado vazio não pode ser compartilhado entre chamadas')
   for (const lixo of [null, 'x', 5, [], { organizables: 'x', folders: null, tags: 3 }]) {
-    assert.deepEqual(sanitizeState(lixo), { organizables: [], folders: [], tags: [] })
+    assert.deepEqual(repairState(lixo), { organizables: [], folders: [], tags: [] })
   }
 }
 {
@@ -223,18 +225,43 @@ assert.equal(
     deletedYoutubeIds: ['channel:UCold', 5, null],
     newVideoCounts: { UCx: 3, UCy: 'many', UCz: NaN },
   }
-  const s = sanitizeState(guardado)
-  assert.deepEqual(s.organizables.map(o => o.id), ['org-1', 'sem-tag'])
-  assert.deepEqual(s.organizables[1].tagIds, [])
+  const s = repairState(guardado)
+  assert.deepEqual(s.organizables.map(o => o.id), ['org-1', 'mal', 'sem-tag'], 'só o não-objeto sai; url fora do padrão não apaga o item')
+  assert.equal(s.organizables[1].url, 'https://evil.example/', 'a leitura não mexe na url; o ponto de uso valida')
+  assert.deepEqual(s.organizables[2].tagIds, [])
   assert.equal(s.folders.length, 1)
   assert.equal(s.tags.length, 1)
   assert.deepEqual(s.deletedYoutubeIds, ['channel:UCold'])
   assert.deepEqual(s.newVideoCounts, { UCx: 3 })
 }
 {
+  // campos de forma errada ganham default sem perder o resto do item
+  const s = repairState({ organizables: [{ id: 'x', type: 'video', youtubeId: 'y', name: 7, url: null, thumbnailUrl: 3, tagIds: ['a', 5], folderId: 9, isSubscribed: 'sim', addedAt: 'x' }], folders: [{ id: 'f', order: 'a' }], tags: [{ id: 't' }] })
+  assert.deepEqual(s.organizables[0], {
+    id: 'x', type: 'video', youtubeId: 'y', name: '', url: '', thumbnailUrl: '', tagIds: ['a'], folderId: null,
+    isSubscribed: false, addedAt: 0, lastSyncedAt: 0,
+  })
+  assert.deepEqual(s.folders[0], { id: 'f', name: '', parentId: null, color: '#888888', order: 0 })
+  assert.deepEqual(s.tags[0], { id: 't', name: '', color: '#888888' })
+}
+{
+  // legado que o validador estrito do import recusa continua inteiro na leitura
+  const legado = [
+    canal({ id: 'l1', youtubeId: 'a', url: '' }),
+    canal({ id: 'l2', youtubeId: 'b', url: '/channel/UC1' }),
+    canal({ id: 'l3', youtubeId: 'c', url: 'https://m.youtube.com/@x' }),
+    canal({ id: 'l4', youtubeId: 'd', thumbnailUrl: 'https://lh3.googleusercontent.com/a' }),
+  ]
+  assert.deepEqual(repairState({ organizables: structuredClone(legado), folders: [], tags: [] }).organizables, legado)
+  // ...mas o import continua rejeitando
+  const r = sanitizeBackupCollections({ ...backupReal(), organizables: structuredClone(legado) })
+  assert.deepEqual(r.organizables.map(o => o.id), ['l4'], 'import segue estrito para url')
+  assert.equal(r.dropped.organizables, 3)
+}
+{
   // estado saudável: round-trip idêntico, sem inventar chaves opcionais
   const saudavel = { organizables: [canal(), playlist(), video()], folders: [pasta()], tags: [tag()] }
-  assert.deepEqual(sanitizeState(structuredClone(saudavel)), saudavel)
+  assert.deepEqual(repairState(structuredClone(saudavel)), saudavel)
 }
 
 // ── histórico de exibição ───────────────────────────────────────────────────

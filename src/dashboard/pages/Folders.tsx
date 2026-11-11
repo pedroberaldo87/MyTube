@@ -2,6 +2,7 @@ import { h } from 'preact'
 import { useState, useEffect, useCallback } from 'preact/hooks'
 import type { AppState, FeedVideo, Folder } from '../../shared/types'
 import { sendMessage } from '../../shared/messages'
+import { safeImageSrc, safeYouTubeHref } from '../../shared/backup-validate'
 
 interface FoldersProps {
   appState: AppState
@@ -81,7 +82,7 @@ function FolderVideoFeed({ folderId }: { folderId: string }) {
       {videos.map(video => (
         <a
           key={video.videoId}
-          href={video.url}
+          href={safeYouTubeHref(video.url)}
           target="_blank"
           rel="noopener"
           style={{
@@ -90,8 +91,8 @@ function FolderVideoFeed({ folderId }: { folderId: string }) {
           }}
         >
           <div style={feedStyles.thumbWrap}>
-            {video.thumbnailUrl ? (
-              <img src={video.thumbnailUrl} alt="" style={feedStyles.thumb} />
+            {safeImageSrc(video.thumbnailUrl) ? (
+              <img src={safeImageSrc(video.thumbnailUrl)} alt="" style={feedStyles.thumb} />
             ) : (
               <div style={feedStyles.thumbPlaceholder}>▶</div>
             )}
