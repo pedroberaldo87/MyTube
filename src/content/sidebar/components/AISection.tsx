@@ -48,6 +48,8 @@ export function AISection() {
 
   const run = useCallback(async (key: string, fn: () => Promise<void>) => {
     if (busy[key]) return
+    // O erro de uma ação não sobrevive à ação seguinte: ele fala do clique que o causou.
+    setActionError(null)
     setBusy(prev => ({ ...prev, [key]: true }))
     try { await fn() } finally { setBusy(prev => ({ ...prev, [key]: false })) }
   }, [busy])
