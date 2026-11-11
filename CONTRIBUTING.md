@@ -6,7 +6,7 @@ Thanks for your interest in MyTube. This document covers how to set up the proje
 
 ### Prerequisites
 
-- Node.js 20 or later and npm
+- Node.js 22 or later and npm
 - Chrome (to load the unpacked extension)
 - Chromium for Playwright, used by six of the tests: `npx playwright install chromium`
 

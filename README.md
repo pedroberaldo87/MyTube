@@ -7,7 +7,7 @@ A Chrome extension that lets you sort your YouTube subscriptions, playlists and 
 [![CI](https://github.com/pedroberaldo87/MyTube/actions/workflows/ci.yml/badge.svg)](https://github.com/pedroberaldo87/MyTube/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 ![Chrome Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4)
-![Node 20+](https://img.shields.io/badge/node-%3E%3D20-339933)
+![Node 22+](https://img.shields.io/badge/node-%3E%3D22-339933)
 
 <p align="center">
   <img src="docs/screenshots/sidebar-void-theme.png" width="30%" alt="MyTube sidebar open on YouTube with the Void theme: six folders and a library list" />
@@ -40,7 +40,7 @@ All screenshots use made-up channels and folders.
 
 MyTube is not on the Chrome Web Store, so you build it and load it yourself. It takes about two minutes.
 
-You need [Node.js](https://nodejs.org) 20 or newer (`node -v` to check), git and Chrome.
+You need [Node.js](https://nodejs.org) 22 or newer (`node -v` to check), git and Chrome.
 
 ### 1. Build
 
@@ -153,7 +153,6 @@ Chrome shows a broad-sounding list. Here is what each entry is for and what is *
 | Permission | Why |
 |---|---|
 | `storage`, `unlimitedStorage` | Your folders, tags and watch history, in the browser. `unlimitedStorage` only lifts the 5 MB quota, which a large library exceeds |
-| `tabs` | Telling the sidebar to open when you click the toolbar icon |
 | `alarms` | Scheduling the check for new uploads |
 | `https://www.youtube.com/*`, `https://youtube.com/*` | The sidebar itself: it is a content script injected into YouTube |
 | `https://auth.openai.com/*`, `https://chatgpt.com/backend-api/*` | Only used if you connect a ChatGPT account: the device-code flow and the inference endpoint |

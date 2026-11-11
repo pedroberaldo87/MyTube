@@ -161,11 +161,12 @@ async function buildExtension() {
     ],
     // Cada linha aqui é um item a mais no diálogo de instalação do Chrome, então
     // nenhuma entra "por precaução": `activeTab` estava declarada e sem uso nenhum
-    // — o acesso ao YouTube já vem de `host_permissions`.
+    // — o acesso ao YouTube já vem de `host_permissions`. `tabs` também saiu: ela
+    // só serve para ler url/título/ícone das abas, e a única chamada é
+    // `chrome.tabs.sendMessage(tab.id, …)`, que não pede permissão nenhuma.
     permissions: [
       'storage',
       'unlimitedStorage',
-      'tabs',
       'alarms',
     ],
     host_permissions: [
