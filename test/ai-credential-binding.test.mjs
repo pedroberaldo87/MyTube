@@ -15,6 +15,8 @@ import { bootWorker, EXT_SENDER, CONTENT_SENDER } from './helpers/worker-harness
 //     never from a content script on youtube.com.
 //  5. Cleartext http:// to a public host is refused; loopback/private stays OK.
 //  6. A save never leaks the credential back in its response.
+//  (New ids below are saved with intent: 'create'; a save for an unknown id without
+//  it is rejected, see ai-save-intent.test.mjs.)
 
 const LEGACY_KEY = 'mytube-ai-providers'
 const OLD_KEY = 'KEY-SECRET-OLD-1111'
@@ -101,30 +103,30 @@ assert.equal(r.ok, false, 'a save created an openai-oauth provider: only the dev
 assert.equal(await get('po-new'), undefined)
 
 // tokens in a message are ignored
-r = await save({ ...base, id: 'p-tok', tokens: { accessToken: 'INJECTED', refreshToken: 'INJECTED', obtainedAt: 1 } })
+r = await save({ ...base, id: 'p-tok', intent: 'create', tokens: { accessToken: 'INJECTED', refreshToken: 'INJECTED', obtainedAt: 1 } })
 assert.equal((await get('p-tok'))?.hasCredential ?? false, false, 'tokens from a message were stored')
 
 // ── 4. credential-bearing saves only from extension pages ────────────────────
-r = await save({ ...base, id: 'p-cs', baseUrl: 'https://cs.example.com/v1', apiKey: 'KEY-SECRET-CS-3333' }, CONTENT_SENDER)
+r = await save({ ...base, id: 'p-cs', intent: 'create', baseUrl: 'https://cs.example.com/v1', apiKey: 'KEY-SECRET-CS-3333' }, CONTENT_SENDER)
 assert.equal(r.ok, false, 'a content script was allowed to submit an API key')
 assert.equal(await get('p-cs'), undefined, 'provider from a rejected save was created')
-r = await save({ ...base, id: 'p-ext', baseUrl: 'https://ext.example.com/v1', apiKey: 'KEY-SECRET-EXT-4444' }, EXT_SENDER)
+r = await save({ ...base, id: 'p-ext', intent: 'create', baseUrl: 'https://ext.example.com/v1', apiKey: 'KEY-SECRET-EXT-4444' }, EXT_SENDER)
 assert.equal(r.ok, true)
 assert.equal((await get('p-ext')).hasCredential, true)
 // a sender with no extension identity at all is not an extension page either
-r = await save({ ...base, id: 'p-anon', baseUrl: 'https://anon.example.com/v1', apiKey: 'KEY-SECRET-ANON-5555' }, {})
+r = await save({ ...base, id: 'p-anon', intent: 'create', baseUrl: 'https://anon.example.com/v1', apiKey: 'KEY-SECRET-ANON-5555' }, {})
 assert.equal(r.ok, false)
 
 // ── 5. cleartext to a public host is refused ─────────────────────────────────
-r = await save({ ...base, id: 'p-http', baseUrl: 'http://public.example.com/v1', apiKey: 'KEY-SECRET-HTTP-6666' })
+r = await save({ ...base, id: 'p-http', intent: 'create', baseUrl: 'http://public.example.com/v1', apiKey: 'KEY-SECRET-HTTP-6666' })
 assert.equal(r.ok, false, 'http:// to a public host was accepted')
 assert.equal(r.error, 'insecure-http')
 assert.equal(await get('p-http'), undefined)
 for (const url of ['http://localhost:11434/v1', 'http://192.168.1.5:8080/v1', 'http://100.100.100.100:8000/v1', 'https://public.example.com/v1']) {
-  r = await save({ ...base, id: `p-${url}`, baseUrl: url })
+  r = await save({ ...base, id: `p-${url}`, intent: 'create', baseUrl: url })
   assert.equal(r.ok, true, `${url} must stay accepted: ${r.error}`)
 }
-r = await save({ ...base, id: 'p-bad', baseUrl: 'not a url' })
+r = await save({ ...base, id: 'p-bad', intent: 'create', baseUrl: 'not a url' })
 assert.equal(r.ok, false)
 assert.equal(r.error, 'invalid-url')
 

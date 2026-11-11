@@ -394,6 +394,10 @@ async function handleMessage(
       // Só o device flow (AI_OAUTH_COMPLETE) cria provedor OAuth; um save nunca
       // cria nem muda o tipo.
       if (!prev && incoming.kind !== 'api-key') return { ok: false, error: 'forbidden-kind' }
+      // Um save nunca cria por engano: id desconhecido só passa com intenção explícita
+      // de criar (o fluxo Adicionar). Sem isto, salvar numa janela de chave aberta
+      // antes de o provedor ser removido na sidebar o recriaria.
+      if (!prev && incoming.intent !== 'create') return { ok: false, error: 'provider-not-found' }
 
       let record: AIProvider
       if (prev?.kind === 'openai-oauth') {

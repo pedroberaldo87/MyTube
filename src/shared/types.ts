@@ -122,7 +122,10 @@ export type MessageType =
   | { type: 'AI_LIST_PROVIDERS'; payload?: undefined }
   // `model` ausente = preservar o gravado (a página de chave não conhece o modelo
   // corrente e não deve regravar um snapshot velho dele).
-  | { type: 'AI_SAVE_PROVIDER'; payload: Omit<AIProvider, 'model'> & { model?: string | null } }
+  // `intent: 'create'` is the only way a save may introduce an id the worker does
+  // not know; without it, an unknown id is rejected (a removed provider must not
+  // come back because a key window that was open at the time pressed Save).
+  | { type: 'AI_SAVE_PROVIDER'; payload: Omit<AIProvider, 'model'> & { model?: string | null; intent?: 'create' } }
   | { type: 'AI_DELETE_PROVIDER'; payload: { id: string } }
   | { type: 'AI_SET_ACTIVE_PROVIDER'; payload: { id: string | null } }
   | { type: 'AI_TEST_PROVIDER'; payload: { id: string } }

@@ -34,6 +34,7 @@ function errorKey(code: string | undefined): TranslationKey {
   switch (code) {
     case 'insecure-http': return 'ai.errInsecureHttp'
     case 'invalid-url': return 'ai.errInvalidUrl'
+    case 'provider-not-found': return 'ai.errProviderNotFound'
     case 'forbidden-sender':
     case 'forbidden-kind': return 'ai.errInternal'
     default: return 'ai.errInternal'
@@ -188,6 +189,7 @@ async function main(): Promise<void> {
           type: 'AI_SAVE_PROVIDER',
           payload: {
             id: editingId ?? crypto.randomUUID(),
+            ...(editingId ? {} : { intent: 'create' as const }),
             label: labelInput.value.trim() || baseUrl,
             kind: 'api-key',
             baseUrl,

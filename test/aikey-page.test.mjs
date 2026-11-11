@@ -96,6 +96,7 @@ try {
   assert.equal(payload.label, 'My server')
   assert.ok(payload.id, 'a new provider got no id')
   assert.equal('model' in payload, false, 'the key window must not send a model snapshot')
+  assert.equal(payload.intent, 'create', 'Add must say it is an explicit create (the worker rejects unknown ids otherwise)')
   await page.close()
 
   // 1b. permission declined: nothing is saved
@@ -142,6 +143,7 @@ try {
   ev = await events(page)
   const save = ev.find(e => e.msg?.type === 'AI_SAVE_PROVIDER').msg.payload
   assert.equal(save.id, 'p1')
+  assert.equal('intent' in save, false, 'an edit must not claim to be a create')
   assert.equal(save.label, 'Renamed')
   assert.equal('apiKey' in save, false, 'a blank key must send no apiKey (keep the stored one)')
   assert.equal('model' in save, false)

@@ -87,7 +87,7 @@ assert.equal(w.fetches.at(-1).url, 'https://llm.example.com/v1/models')
 // ── B. writes never go back to chrome.storage.local ───────────────────────────
 await w.send({
   type: 'AI_SAVE_PROVIDER',
-  payload: { id: 'p-new', label: 'New', kind: 'api-key', baseUrl: 'https://api.example.org/v1', model: null, apiKey: 'KEY-SECRET-DDDD-0004' },
+  payload: { id: 'p-new', label: 'New', kind: 'api-key', baseUrl: 'https://api.example.org/v1', model: null, intent: 'create', apiKey: 'KEY-SECRET-DDDD-0004' },
 })
 await w.send({ type: 'AI_SET_ACTIVE_PROVIDER', payload: { id: 'p-new' } })
 await w.send({ type: 'AI_SAVE_PROVIDER', payload: { id: 'p-new', label: 'Renamed', kind: 'api-key', baseUrl: 'https://api.example.org/v1', model: 'model-a' } })
