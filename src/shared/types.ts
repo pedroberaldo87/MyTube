@@ -135,6 +135,9 @@ export type MessageType =
   | { type: 'AI_REQUEST_HOST_PERMISSION'; payload: { url: string } }
   // Desfecho vindo da janelinha, que sabe o requestId por estar na sua URL.
   | { type: 'AI_HOST_PERMISSION_RESULT'; payload: { requestId: string; outcome: PermissionOutcome } }
+  // A sidebar não digita chave: este pedido abre a página da extensão que digita.
+  // `id` = editar o provedor (chave nova ou endereço); null = adicionar um.
+  | { type: 'AI_OPEN_KEY_PAGE'; payload: { id: string | null } }
   | { type: 'OPEN_OPTIONS_PAGE'; payload?: undefined }
 
 /**
@@ -151,6 +154,8 @@ export type MessageResponse<T extends MessageType['type']> =
   T extends 'GET_HOME_FEED' ? HomeFeedFolder[] :
   T extends 'GET_HOME_NUDGE_DATA' ? HomeNudgeData :
   T extends 'AI_LIST_PROVIDERS' ? AIConfigPublic :
+  T extends 'AI_SAVE_PROVIDER' ? { ok: boolean; error?: string } :
+  T extends 'AI_OPEN_KEY_PAGE' ? { ok: boolean; error?: string } :
   T extends 'AI_TEST_PROVIDER' ? { ok: boolean; error?: string; latencyMs?: number; modelCount?: number } :
   T extends 'AI_LIST_MODELS' ? string[] :
   T extends 'AI_OAUTH_BEGIN' ? AIOAuthBeginResponse :

@@ -12,7 +12,7 @@ export type PermissionOutcome = 'granted' | 'invalid-url' | 'cannot-request' | '
 
 /** Hosts que só existem em rede privada — inclusive a faixa 100.64/10 (CGNAT),
  *  que é a que o Tailscale usa. Endereço nessas faixas dificilmente fala https. */
-function isPrivateHost(hostname: string): boolean {
+export function isPrivateHost(hostname: string): boolean {
   if (hostname === 'localhost' || hostname.endsWith('.local')) return true
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname)
   if (!m) return false
@@ -51,6 +51,26 @@ function hostPartOf(raw: string): string {
   return semEsquema.split(/[/?#]/)[0] ?? ''
 }
 
+export type EndpointProblem = 'invalid-url' | 'insecure-http'
+
+/**
+ * Por que um endereço não serve. `insecure-http` é distinto de lixo digitado: o
+ * usuário escreveu um endereço válido, mas a chave de API viajaria em claro por
+ * uma rede que ele não controla. Só host de loopback/rede privada fala http
+ * (a mesma isPrivateHost que escolhe o esquema quando ele não digita nenhum).
+ */
+export function endpointProblem(raw: string): EndpointProblem | null {
+  if (normalizeEndpointUrl(raw)) return null
+  const trimmed = raw.trim()
+  if (/^http:\/\//i.test(trimmed) && looksLikeHost(hostPartOf(trimmed))) {
+    try {
+      const u = new URL(trimmed)
+      if (u.hostname && !isPrivateHost(u.hostname)) return 'insecure-http'
+    } catch { /* cai no invalid-url */ }
+  }
+  return 'invalid-url'
+}
+
 export function normalizeEndpointUrl(raw: string): string | null {
   const trimmed = raw.trim()
   if (!trimmed) return null
@@ -62,6 +82,8 @@ export function normalizeEndpointUrl(raw: string): string | null {
       const u = new URL(trimmed)
       if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
       if (!u.hostname) return null
+      // Chave em http:// para host público trafega em claro: recusa em vez de avisar.
+      if (u.protocol === 'http:' && !isPrivateHost(u.hostname)) return null
       return u.href
     } catch {
       return null

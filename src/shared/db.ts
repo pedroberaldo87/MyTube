@@ -14,6 +14,16 @@ interface MyTubeDB extends DBSchema {
     key: string
     value: NewVideoCheck
   }
+  /**
+   * Credenciais de IA. IndexedDB é por ORIGEM: o content script roda na origem
+   * do youtube.com e não abre este banco; só o service worker e as páginas da
+   * extensão abrem. É por isso que a configuração de IA mora aqui e não em
+   * chrome.storage.local, que o content script lê direto.
+   */
+  aiConfig: {
+    key: string
+    value: unknown
+  }
 }
 
 let dbInstance: IDBPDatabase<MyTubeDB> | null = null
@@ -21,15 +31,20 @@ let dbInstance: IDBPDatabase<MyTubeDB> | null = null
 async function getDB(): Promise<IDBPDatabase<MyTubeDB>> {
   if (dbInstance) return dbInstance
 
-  dbInstance = await openDB<MyTubeDB>('mytube', 1, {
-    upgrade(db) {
-      const watchStore = db.createObjectStore('watchHistory', {
-        autoIncrement: true,
-      })
-      watchStore.createIndex('by-channel', 'channelId')
-      watchStore.createIndex('by-date', 'watchedAt')
+  dbInstance = await openDB<MyTubeDB>('mytube', 2, {
+    upgrade(db, oldVersion) {
+      if (oldVersion < 1) {
+        const watchStore = db.createObjectStore('watchHistory', {
+          autoIncrement: true,
+        })
+        watchStore.createIndex('by-channel', 'channelId')
+        watchStore.createIndex('by-date', 'watchedAt')
 
-      db.createObjectStore('newVideoChecks', { keyPath: 'channelId' })
+        db.createObjectStore('newVideoChecks', { keyPath: 'channelId' })
+      }
+      if (oldVersion < 2) {
+        db.createObjectStore('aiConfig')
+      }
     },
   })
   return dbInstance
@@ -159,5 +174,39 @@ export async function importWatchHistory(entries: WatchEntry[]): Promise<void> {
   for (const entry of entries) {
     await tx.store.add(entry)
   }
+  await tx.done
+}
+
+// ── Credenciais de IA (store só do service worker / páginas da extensão) ──────
+
+const AI_CONFIG_KEY = 'config'
+const AI_MIGRATED_KEY = 'legacy-migrated'
+
+export async function getAIConfigRecord(): Promise<unknown> {
+  const database = await getDB()
+  return database.get('aiConfig', AI_CONFIG_KEY)
+}
+
+export async function putAIConfigRecord(config: unknown): Promise<void> {
+  const database = await getDB()
+  await database.put('aiConfig', config, AI_CONFIG_KEY)
+}
+
+/** A migração a partir do chrome.storage.local já aconteceu? */
+export async function isAIConfigMigrated(): Promise<boolean> {
+  const database = await getDB()
+  return (await database.get('aiConfig', AI_MIGRATED_KEY)) === true
+}
+
+/**
+ * Grava a configuração importada E a marca de "migrado" na MESMA transação: a
+ * marca sem os dados perderia a credencial, os dados sem a marca reimportariam
+ * (e ressuscitariam um provedor removido) na próxima partida.
+ */
+export async function completeAIConfigMigration(imported: unknown | undefined): Promise<void> {
+  const database = await getDB()
+  const tx = database.transaction('aiConfig', 'readwrite')
+  if (imported !== undefined) await tx.store.put(imported, AI_CONFIG_KEY)
+  await tx.store.put(true, AI_MIGRATED_KEY)
   await tx.done
 }
