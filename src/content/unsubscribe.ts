@@ -1,3 +1,5 @@
+import { isYouTubeUrl } from '../shared/backup-validate'
+
 const PENDING_KEY = 'mytube-pending-unsub'
 const BATCH_KEY = 'mytube-unsub-batch'
 const RETURN_KEY = 'mytube-unsub-return'
@@ -12,6 +14,12 @@ interface BatchUnsub {
 }
 
 export function triggerUnsubscribe(channelUrl: string): void {
+  // Só navega para https://(www.)youtube.com. `organizable.url` vem do storage
+  // (e, antes do validador, de backups); nunca é confiável para `location.href`.
+  if (!isYouTubeUrl(channelUrl)) {
+    console.warn('[MyTube] Refusing to unsubscribe via non-YouTube URL')
+    return
+  }
   const targetPath = new URL(channelUrl).pathname
 
   if (window.location.pathname === targetPath || window.location.pathname.startsWith(targetPath + '/')) {
@@ -23,7 +31,8 @@ export function triggerUnsubscribe(channelUrl: string): void {
   window.location.href = channelUrl
 }
 
-export function triggerBatchUnsubscribe(channelUrls: string[]): void {
+export function triggerBatchUnsubscribe(requestedUrls: string[]): void {
+  const channelUrls = requestedUrls.filter(isYouTubeUrl)
   if (channelUrls.length === 0) return
 
   const batch: BatchUnsub = { urls: channelUrls, total: channelUrls.length }
@@ -77,6 +86,9 @@ function afterUnsubscribe(): void {
     return
   }
 
+  // sessionStorage é da aba, mas a página youtube.com também escreve nele.
+  // Revalida antes de navegar.
+  batch.urls = Array.isArray(batch.urls) ? batch.urls.filter(isYouTubeUrl) : []
   batch.urls.shift()
 
   if (batch.urls.length === 0) {
@@ -85,7 +97,7 @@ function afterUnsubscribe(): void {
     sessionStorage.removeItem(RETURN_KEY)
     console.log(`[MyTube] Batch unsubscribe complete (${batch.total} channels)`)
     setTimeout(() => {
-      window.location.href = returnUrl || 'https://www.youtube.com'
+      window.location.href = isYouTubeUrl(returnUrl) ? returnUrl : 'https://www.youtube.com'
     }, 800)
     return
   }

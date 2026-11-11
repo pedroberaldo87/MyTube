@@ -2,6 +2,7 @@ import { h } from 'preact'
 import { useState } from 'preact/hooks'
 import type { AppState, Folder, Organizable, Tag } from '../../shared/types'
 import { sendMessage } from '../../shared/messages'
+import { safeImageSrc, safeYouTubeHref } from '../../shared/backup-validate'
 
 interface ChannelsProps {
   appState: AppState
@@ -84,14 +85,14 @@ function ChannelCard({ channel, folders, tags, expanded, onToggleExpand, onRefre
     <div style={cardStyles.card}>
       <div style={cardStyles.cardHeader} onClick={onToggleExpand}>
         <img
-          src={channel.thumbnailUrl}
+          src={safeImageSrc(channel.thumbnailUrl)}
           alt={channel.name}
           style={cardStyles.thumbnail}
           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
         />
         <div style={cardStyles.cardInfo}>
           <a
-            href={channel.url}
+            href={safeYouTubeHref(channel.url)}
             target="_blank"
             rel="noopener noreferrer"
             style={cardStyles.channelName}

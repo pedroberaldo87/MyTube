@@ -6,6 +6,7 @@ import { useT } from '../../../shared/i18n'
 import { loadUIState, saveUIState } from '../../../shared/ui-state'
 import { sendMessage } from '../../../shared/messages'
 import { triggerUnsubscribe, triggerBatchUnsubscribe } from '../../unsubscribe'
+import { safeImageSrc, safeYouTubeHref } from '../../../shared/backup-validate'
 import { NewBadge } from './NewBadge'
 import { BatchActionBar } from './BatchActionBar'
 import { flattenFolders } from '../../../shared/folders'
@@ -582,8 +583,8 @@ function FolderNode({ folder, folders, organizables, tags, depth, onRefresh, exp
                   </div>
                 )}
                 <div style={{ position: 'relative', flexShrink: 0 }}>
-                  {item.thumbnailUrl ? (
-                    <img src={item.thumbnailUrl} alt="" style={s.inlineThumb} />
+                  {safeImageSrc(item.thumbnailUrl) ? (
+                    <img src={safeImageSrc(item.thumbnailUrl)} alt="" style={s.inlineThumb} />
                   ) : (
                     <div style={{ ...s.inlineThumbPlaceholder, background: ITEM_GRADIENTS[Math.abs(hashStr(item.id)) % ITEM_GRADIENTS.length] }}>
                       {item.type === 'video' ? '♪' : item.type === 'channel' ? '📺' : '📋'}
@@ -593,7 +594,7 @@ function FolderNode({ folder, folders, organizables, tags, depth, onRefresh, exp
                 </div>
                 <div style={s.inlineInfo}>
                   <a
-                    href={item.url}
+                    href={safeYouTubeHref(item.url)}
                     target="_top"
                     rel="noopener"
                     style={s.inlineItemName}

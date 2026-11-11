@@ -87,6 +87,7 @@ const translations = {
   'data.imported': { en: '✓ Imported successfully', 'pt-BR': '✓ Importado com sucesso' },
   'data.merge': { en: 'Merge', 'pt-BR': 'Mesclar' },
   'data.replace': { en: 'Replace', 'pt-BR': 'Substituir' },
+  'data.skipped': { en: 'invalid entries skipped', 'pt-BR': 'entradas inválidas ignoradas' },
   'data.found': { en: 'Found', 'pt-BR': 'Encontrados' },
   'data.channel': { en: 'channel', 'pt-BR': 'canal' },
   'data.channels': { en: 'channels', 'pt-BR': 'canais' },

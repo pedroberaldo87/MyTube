@@ -2,6 +2,7 @@ import { h } from 'preact'
 import { useState } from 'preact/hooks'
 import type { AppState, Folder, Organizable, Tag } from '../../shared/types'
 import { sendMessage } from '../../shared/messages'
+import { safeImageSrc, safeYouTubeHref } from '../../shared/backup-validate'
 
 interface PlaylistsProps {
   appState: AppState
@@ -84,14 +85,14 @@ function PlaylistCard({ playlist, folders, tags, expanded, onToggleExpand, onRef
     <div style={cardStyles.card}>
       <div style={cardStyles.cardHeader} onClick={onToggleExpand}>
         <img
-          src={playlist.thumbnailUrl}
+          src={safeImageSrc(playlist.thumbnailUrl)}
           alt={playlist.name}
           style={cardStyles.thumbnail}
           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
         />
         <div style={cardStyles.cardInfo}>
           <a
-            href={playlist.url}
+            href={safeYouTubeHref(playlist.url)}
             target="_blank"
             rel="noopener noreferrer"
             style={cardStyles.playlistName}

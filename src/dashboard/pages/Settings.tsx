@@ -4,28 +4,19 @@ import type { AppState } from '../../shared/types'
 import { sendMessage } from '../../shared/messages'
 import { exportWatchHistory, importWatchHistory } from '../../shared/db'
 import { TagManager } from '../components/TagManager'
+import { sanitizeBackupCollections, repairState, type SanitizedBackup } from '../../shared/backup-validate'
 
 interface SettingsProps {
   appState: AppState
   onRefresh: () => Promise<void>
 }
 
-interface ImportPayload {
-  organizables: AppState['organizables']
-  folders: AppState['folders']
-  tags: AppState['tags']
-  watchHistory: Awaited<ReturnType<typeof exportWatchHistory>>
-}
+// O arquivo passa por UM validador por elemento (shared/backup-validate.ts) antes
+// de virar `importData`; nada cru chega ao storage nem ao IndexedDB.
+type ImportPayload = SanitizedBackup
 
-function isImportPayload(obj: unknown): obj is ImportPayload {
-  if (typeof obj !== 'object' || obj === null) return false
-  const o = obj as Record<string, unknown>
-  return (
-    Array.isArray(o['organizables']) &&
-    Array.isArray(o['folders']) &&
-    Array.isArray(o['tags']) &&
-    Array.isArray(o['watchHistory'])
-  )
+function parseImportPayload(obj: unknown): ImportPayload | null {
+  return sanitizeBackupCollections(obj)
 }
 
 function ExportSection() {
@@ -96,11 +87,12 @@ function ImportSection({ onRefresh }: { onRefresh: () => Promise<void> }) {
     reader.onload = e => {
       try {
         const raw: unknown = JSON.parse((e.target as FileReader).result as string)
-        if (!isImportPayload(raw)) {
+        const payload = parseImportPayload(raw)
+        if (!payload) {
           setStatus({ type: 'error', message: 'Invalid backup file — missing required fields.' })
           return
         }
-        setImportData(raw)
+        setImportData(payload)
       } catch {
         setStatus({ type: 'error', message: 'Could not parse JSON file.' })
       }
@@ -140,8 +132,7 @@ function ImportSection({ onRefresh }: { onRefresh: () => Promise<void> }) {
         }
         // Merge folders and tags via direct storage (no background message for those)
         const result = await chrome.storage.local.get('mytube_state')
-        type RawState = { organizables: AppState['organizables']; folders: AppState['folders']; tags: AppState['tags'] }
-        const existing = (result['mytube_state'] as RawState | undefined) ?? { organizables: [], folders: [], tags: [] }
+        const existing = repairState(result['mytube_state'])
 
         // Merge folders (deduplicate by id)
         const folderIds = new Set(existing.folders.map((f: AppState['folders'][number]) => f.id))
@@ -161,9 +152,12 @@ function ImportSection({ onRefresh }: { onRefresh: () => Promise<void> }) {
       // Import watch history
       await importWatchHistory(importData.watchHistory)
 
+      const skipped = importData.dropped.organizables + importData.dropped.folders
+        + importData.dropped.tags + importData.dropped.watchHistory
       setStatus({
         type: 'success',
-        message: `Import complete. ${importData.organizables.length} items, ${importData.watchHistory.length} watch history entries.`,
+        message: `Import complete. ${importData.organizables.length} items, ${importData.watchHistory.length} watch history entries.`
+          + (skipped > 0 ? ` ${skipped} invalid entries were skipped.` : ''),
       })
       setImportData(null)
       await onRefresh()
