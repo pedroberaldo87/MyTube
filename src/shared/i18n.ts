@@ -269,8 +269,8 @@ const translations = {
     'pt-BR': 'Sua conta ChatGPT. Você aprova um código no site da OpenAI, sem precisar de chave.',
   },
   'ai.pathApiKey': {
-    en: 'Any server that speaks the OpenAI API. You provide the address and a key.',
-    'pt-BR': 'Qualquer servidor que fale a API da OpenAI. Você informa o endereço e uma chave.',
+    en: 'Any server that speaks the OpenAI API. You provide the address and a key in a separate MyTube window.',
+    'pt-BR': 'Qualquer servidor que fale a API da OpenAI. Você informa o endereço e uma chave numa janela própria do MyTube.',
   },
   'ai.urlHelp': {
     en: 'Include the path, usually ending in /v1. Example: localhost:11434/v1',
@@ -319,6 +319,26 @@ const translations = {
   'ai.errInternal': {
     en: 'Internal extension error. Try again.',
     'pt-BR': 'Erro interno da extensão. Tente de novo.',
+  },
+  'ai.errInsecureHttp': {
+    en: 'Plain http:// is only allowed for this computer or your local network. Use https:// for any other server, or your key would travel unencrypted.',
+    'pt-BR': 'http:// puro só vale para este computador ou a sua rede local. Use https:// em qualquer outro servidor, ou a chave viajaria sem criptografia.',
+  },
+  'ai.errCannotOpenKeyPage': {
+    en: 'Could not open the key window. Try again.',
+    'pt-BR': 'Não foi possível abrir a janela da chave. Tente de novo.',
+  },
+  'ai.keyConfigured': { en: 'Credential saved', 'pt-BR': 'Credencial guardada' },
+  'ai.keyWindowHelp': {
+    en: 'The key is typed in a separate MyTube window, never on the YouTube page.',
+    'pt-BR': 'A chave é digitada numa janela própria do MyTube, nunca na página do YouTube.',
+  },
+  // Janela de chave de API (página da extensão)
+  'aikey.title': { en: 'Add an endpoint', 'pt-BR': 'Adicionar um endpoint' },
+  'aikey.titleEdit': { en: 'Edit endpoint', 'pt-BR': 'Editar endpoint' },
+  'aikey.rebindWarning': {
+    en: 'Changing the address removes the saved key and model. Type the key again to keep using this provider.',
+    'pt-BR': 'Trocar o endereço apaga a chave e o modelo guardados. Digite a chave de novo para continuar usando este provedor.',
   },
   // Host permission dialog (janela popup própria)
   'perm.title': { en: 'Permission needed', 'pt-BR': 'Permissão necessária' },

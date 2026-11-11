@@ -120,7 +120,9 @@ export type MessageType =
   | { type: 'GET_HOME_NUDGE_DATA'; payload?: undefined }
   | { type: 'REMOVE_WATCH_ENTRY'; payload: { videoId: string } }
   | { type: 'AI_LIST_PROVIDERS'; payload?: undefined }
-  | { type: 'AI_SAVE_PROVIDER'; payload: AIProvider }
+  // `model` ausente = preservar o gravado (a página de chave não conhece o modelo
+  // corrente e não deve regravar um snapshot velho dele).
+  | { type: 'AI_SAVE_PROVIDER'; payload: Omit<AIProvider, 'model'> & { model?: string | null } }
   | { type: 'AI_DELETE_PROVIDER'; payload: { id: string } }
   | { type: 'AI_SET_ACTIVE_PROVIDER'; payload: { id: string | null } }
   | { type: 'AI_TEST_PROVIDER'; payload: { id: string } }

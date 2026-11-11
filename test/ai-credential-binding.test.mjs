@@ -48,8 +48,14 @@ assert.equal((await get('p1')).hasCredential, true, 'model-only save dropped the
 await w.send({ type: 'AI_TEST_PROVIDER', payload: { id: 'p1' } })
 assert.equal(w.fetches.at(-1).authorization, `Bearer ${OLD_KEY}`, 'model-only save lost the stored key')
 
-r = await save({ ...base, label: 'Renamed' }, EXT_SENDER)
+r = await save({ ...base, model: 'model-b', label: 'Renamed' }, EXT_SENDER)
 assert.equal((await get('p1')).hasCredential, true, 'label-only save from the key page dropped the credential')
+
+// The key page sends no model: the stored one (picked in the sidebar combo AFTER
+// the page loaded) must survive, not be overwritten by a stale snapshot.
+const { model: _omitted, ...noModel } = base
+r = await save({ ...noModel, label: 'Renamed again' }, EXT_SENDER)
+assert.equal((await get('p1')).model, 'model-b', 'a save without a model overwrote the stored model')
 
 // ── 1. baseUrl change drops the key ──────────────────────────────────────────
 const before = w.fetches.length

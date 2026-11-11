@@ -398,7 +398,12 @@ async function handleMessage(
       let record: AIProvider
       if (prev?.kind === 'openai-oauth') {
         // Endereço e tokens do OAuth são fixos: rótulo e modelo são tudo o que um save muda.
-        record = { ...prev, label: incoming.label, model: incoming.model, baseUrl: OPENAI_OAUTH_BASE_URL }
+        record = {
+          ...prev,
+          label: incoming.label,
+          model: incoming.model !== undefined ? incoming.model : prev.model,
+          baseUrl: OPENAI_OAUTH_BASE_URL,
+        }
       } else {
         // O endereço é validado AQUI, não só no formulário: o worker é quem envia a
         // credencial. Um endereço já gravado e inalterado passa mesmo que hoje seja
@@ -417,7 +422,7 @@ async function handleMessage(
           label: incoming.label,
           kind: 'api-key',
           baseUrl: normalized,
-          model: rebound ? null : incoming.model,
+          model: rebound ? null : incoming.model !== undefined ? incoming.model : prev?.model ?? null,
           ...(apiKey ? { apiKey } : {}),
         }
       }

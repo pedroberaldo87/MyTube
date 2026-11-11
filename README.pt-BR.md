@@ -129,7 +129,7 @@ Arquivar centenas de inscrições na mão é a parte chata. Conecte um modelo e 
 **Conectar.** Abra a sidebar, clique na engrenagem e vá em **IA**. Dois caminhos:
 
 - **Sua conta do ChatGPT**: você aprova um código no site da OpenAI. Sem chave de API.
-- **Qualquer endpoint compatível com a API da OpenAI**: você informa a URL base e a chave. Pode ser um Ollama local, LM Studio, vLLM, OpenRouter ou a própria OpenAI. O Chrome pede permissão para aquele host quando você salva.
+- **Qualquer endpoint compatível com a API da OpenAI**: você informa a URL base e a chave. Pode ser um Ollama local, LM Studio, vLLM, OpenRouter ou a própria OpenAI. **Adicionar endpoint** abre uma janela separada do MyTube, então a chave é digitada ali e nunca na página do YouTube. O Chrome pede permissão para aquele host quando você salva. `http://` puro só é aceito para este computador e redes privadas (localhost, 192.168.x.x, 10.x.x.x, Tailscale); qualquer outro servidor precisa de `https://`. Trocar o endereço de um endpoint salvo apaga a chave e o modelo guardados, então digite a chave de novo.
 
 Depois use **Testar conexão** para escolher o modelo.
 
@@ -164,7 +164,8 @@ O Chrome mostra uma lista de aparência ampla. Para que serve cada item e o que 
 
 - **Content scripts** (`src/content/`) injetam a sidebar e as camadas de feed no youtube.com, feitas com Preact dentro de raízes Shadow DOM. Um script pequeno no MAIN world (`page-bridge.ts`) lê os dados da própria página do YouTube.
 - **Service worker** (`src/background/`) cuida do acesso ao armazenamento, consulta as páginas dos canais a cada 30 minutos por um alarme e faz todas as chamadas de IA. As credenciais não saem dele.
-- **Armazenamento**: pastas, tags e itens da biblioteca em `chrome.storage.local`; histórico de visualização e checagens de vídeos novos em IndexedDB (via `idb`).
+- **Janela de chave de API** (`src/aikey/`) é uma página da extensão, aberta como uma janelinha. É o único lugar onde uma chave de API é digitada.
+- **Armazenamento**: pastas, tags e itens da biblioteca em `chrome.storage.local`; histórico de visualização, checagens de vídeos novos e os provedores de IA (com chaves de API e tokens do ChatGPT) no IndexedDB da extensão (via `idb`). Scripts do youtube.com leem o `chrome.storage.local`, mas não abrem o IndexedDB da extensão; por isso as credenciais ficam lá.
 - **Dashboard** (`src/dashboard/`) é a página de opções da extensão.
 - O `build.ts` é o ponto de entrada real do build (o `vite.config.ts` só serve o `npm run dev`). Ele empacota cada parte separadamente e escreve o `dist/manifest.json`.
 

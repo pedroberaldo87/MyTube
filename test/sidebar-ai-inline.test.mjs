@@ -13,7 +13,9 @@ import { t } from '../src/shared/i18n.ts'
 // Então: nenhuma tela da sidebar despacha OPEN_OPTIONS_PAGE, o SettingsPanel
 // renderiza a AISection, e a AISection tem a configuração INTEIRA (listar,
 // ativar, testar, escolher modelo, editar, remover, adicionar endpoint,
-// conectar conta ChatGPT e o painel do código do device flow).
+// conectar conta ChatGPT e o painel do código do device flow). Adicionar/editar
+// endpoint são BOTÕES da seção que abrem a janela de chave da extensão (a chave
+// não é digitada no DOM do youtube.com).
 
 const SRC = new URL('../src/', import.meta.url).pathname
 const PANEL = join(SRC, 'content/sidebar/components/SettingsPanel.tsx')
@@ -101,10 +103,16 @@ assert.match(
   'a AISection não usa o deviceFlow da sidebar',
 )
 
-// o único passo que sai da sidebar é o ACEITE de permissão, e ele vai por mensagem
+// A chave de API NÃO é digitada na sidebar (ela vive no DOM do youtube.com): adicionar e
+// editar endpoint abrem a janela da extensão por mensagem, e é essa janela que pede a
+// permissão de host. Ver test/sidebar-no-key-input.test.mjs.
 assert.match(
-  ai, /ensureHostPermission/,
-  'a AISection não pede permissão de host — salvar endpoint próprio falharia calado',
+  ai, /AI_OPEN_KEY_PAGE/,
+  'a AISection não abre a janela de chave: adicionar endpoint ficaria sem caminho',
+)
+assert.equal(
+  /ensureHostPermission/.test(ai), false,
+  'a AISection voltou a pedir permissão de host: isso mora na janela de chave da extensão',
 )
 assert.equal(
   /chrome\.permissions/.test(ai), false,

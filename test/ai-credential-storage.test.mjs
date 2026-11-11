@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { openDB } from 'idb'
 import { bootWorker, EXT_SENDER } from './helpers/worker-harness.mjs'
 
 // INVARIANT: AI credentials (API keys, ChatGPT OAuth tokens) never live in
@@ -17,6 +18,8 @@ import { bootWorker, EXT_SENDER } from './helpers/worker-harness.mjs'
 //     AFTER the migration (e.g. written by a hostile content script) is deleted,
 //     never imported.
 //  D. responses to the UI never carry a credential.
+//  E. an existing install (IndexedDB v1: watch history, new-video checks) upgrades
+//     to v2 without losing a row.
 
 const LEGACY_KEY = 'mytube-ai-providers'
 const API_SECRET = 'KEY-SECRET-AAAA-0001'
@@ -45,6 +48,19 @@ function assertNoSecret(store, where) {
   const dump = readable(store)
   for (const s of SECRETS) assert.equal(dump.includes(s), false, `credential found in chrome.storage.local (${where}): ${s}`)
 }
+
+// ── E. the v1 → v2 upgrade keeps existing data ───────────────────────────────
+const v1 = await openDB('mytube', 1, {
+  upgrade(db) {
+    const watch = db.createObjectStore('watchHistory', { autoIncrement: true })
+    watch.createIndex('by-channel', 'channelId')
+    watch.createIndex('by-date', 'watchedAt')
+    db.createObjectStore('newVideoChecks', { keyPath: 'channelId' })
+  },
+})
+await v1.add('watchHistory', { videoId: 'v1', channelId: 'c1', watchedAt: 1 })
+await v1.put('newVideoChecks', { channelId: 'c1', lastKnownVideoId: 'v1', lastCheckedAt: 1, newCount: 3, seenUpToAt: 0 })
+v1.close()
 
 // ── A. migration ─────────────────────────────────────────────────────────────
 const w = await bootWorker({ storage: { [LEGACY_KEY]: legacy, 'mytube-theme': 'dark' } })
@@ -84,6 +100,14 @@ const again = await w.send({ type: 'AI_LIST_PROVIDERS' })
 const wire = JSON.stringify(again)
 for (const s of [...SECRETS, 'KEY-SECRET-DDDD-0004']) assert.equal(wire.includes(s), false, `credential leaked in AI_LIST_PROVIDERS: ${s}`)
 assert.equal(again.providers.every(p => !('apiKey' in p) && !('tokens' in p)), true)
+
+// E. (continued) the data written under v1 is still there after the upgrade
+const counts = await w.send({ type: 'GET_NEW_VIDEO_COUNTS' })
+assert.deepEqual(counts, { c1: 3 }, 'the v1 → v2 upgrade lost newVideoChecks rows')
+const dbAfter = await openDB('mytube')
+assert.equal(dbAfter.version, 2)
+assert.equal((await dbAfter.getAll('watchHistory')).length, 1, 'the v1 → v2 upgrade lost watchHistory rows')
+dbAfter.close()
 
 // ── C. one-way: a legacy record that appears later is deleted, never imported ─
 w.store[LEGACY_KEY] = {
