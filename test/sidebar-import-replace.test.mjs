@@ -101,7 +101,10 @@ try {
   await page.waitForFunction(label => document.getElementById('app').innerText.includes(label), t('data.exported', 'en'))
   await pickBackup(page)
   await clickText(page, t('data.replace', 'en'))
-  await page.waitForFunction(() => /✓|failed|Falha/i.test(document.getElementById('app').innerText))
+  // Wait for the OUTCOME of Replace. "✓ Exported" from the step above is still on
+  // screen, so a bare /✓/ matched it at once and the assert below raced the restore.
+  await page.waitForFunction(labels => labels.some(l => document.getElementById('app').innerText.includes(l)),
+    [t('data.imported', 'en'), t('data.importFailed', 'en')])
   let text = await screen(page)
   assert.ok(text.includes(t('data.imported', 'en')), `Replace after an export did not succeed:\n${text}`)
   assert.deepEqual(await page.evaluate(() => window.__store.mytube_state), NEW_STATE, 'Replace did not restore the state')
