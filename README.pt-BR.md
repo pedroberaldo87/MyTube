@@ -7,7 +7,7 @@ Uma extensão do Chrome para organizar suas inscrições, playlists e vídeos do
 [![CI](https://github.com/pedroberaldo87/MyTube/actions/workflows/ci.yml/badge.svg)](https://github.com/pedroberaldo87/MyTube/actions/workflows/ci.yml)
 [![Licença: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 ![Chrome Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4)
-![Node 20+](https://img.shields.io/badge/node-%3E%3D20-339933)
+![Node 22+](https://img.shields.io/badge/node-%3E%3D22-339933)
 
 <p align="center">
   <img src="docs/screenshots/sidebar-void-theme.png" width="30%" alt="Sidebar do MyTube aberta no YouTube com o tema Void: seis pastas e uma lista da biblioteca" />
@@ -40,7 +40,7 @@ Todas as capturas de tela usam canais e pastas inventados. (A interface das imag
 
 O MyTube não está na Chrome Web Store, então você faz o build e carrega a extensão você mesmo. Leva uns dois minutos.
 
-Você precisa de [Node.js](https://nodejs.org) 20 ou mais novo (`node -v` para conferir), git e Chrome.
+Você precisa de [Node.js](https://nodejs.org) 22 ou mais novo (`node -v` para conferir), git e Chrome.
 
 ### 1. Build
 
@@ -153,7 +153,6 @@ O Chrome mostra uma lista de aparência ampla. Para que serve cada item e o que 
 | Permissão | Para quê |
 |---|---|
 | `storage`, `unlimitedStorage` | Suas pastas, tags e histórico, no navegador. O `unlimitedStorage` só tira o teto de 5 MB, que uma biblioteca grande ultrapassa |
-| `tabs` | Mandar a sidebar abrir quando você clica no ícone da barra |
 | `alarms` | Agendar a checagem de uploads novos |
 | `https://www.youtube.com/*`, `https://youtube.com/*` | A própria sidebar: ela é um content script injetado no YouTube |
 | `https://auth.openai.com/*`, `https://chatgpt.com/backend-api/*` | Só usados se você conectar uma conta do ChatGPT: o fluxo de código de dispositivo e o endpoint de inferência |
