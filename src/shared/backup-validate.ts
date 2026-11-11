@@ -13,7 +13,8 @@ import type { AppState, Folder, Organizable, Tag, WatchEntry } from './types'
  *
  * Política do IMPORT (`sanitize*`):
  *  - `url` do organizable: só `https://youtube.com` ou `https://www.youtube.com`
- *    (sem credenciais, sem porta). Elemento com `url` inválida é DESCARTADO;
+ *    (sem credenciais, sem porta) em caminho de canal, playlist, vídeo ou short
+ *    (`isYouTubeUrl`). Elemento com `url` inválida é DESCARTADO;
  *  - `thumbnailUrl`: só https em host de imagem do YouTube. Inválida vira `''`
  *    (o item continua, sem figura);
  *  - tipos errados ou campos faltando recebem default; sem `id`/`type`/
@@ -60,10 +61,56 @@ function parseHttpsUrl(value: unknown): URL | null {
   return url
 }
 
-/** `https://youtube.com/...` ou `https://www.youtube.com/...`, nada além. */
-export function isYouTubeUrl(value: unknown): value is string {
+/** `https://youtube.com/...` ou `https://www.youtube.com/...`, nada além (qualquer caminho). */
+function parseYouTubeUrl(value: unknown): URL | null {
   const url = parseHttpsUrl(value)
-  return url !== null && YOUTUBE_HOSTS.has(url.hostname)
+  return url !== null && YOUTUBE_HOSTS.has(url.hostname) ? url : null
+}
+
+// Caminhos que o próprio MyTube produz e usa. Qualquer outro caminho no mesmo
+// host (`/redirect?q=…`, `/logout`, `/feed/…`, a raiz) fica de fora: o `fetch` do
+// worker e a navegação do frame principal fariam um GET arbitrário em youtube.com.
+// `pathname` já vem normalizado pelo parser (`/a/../b` → `/b`), então o que se
+// confere é o que o navegador pede.
+//  - canal:    /channel/<id>, /@handle, /c/<nome>, /user/<nome> (+ subcaminho, ex. /videos)
+//  - playlist: /playlist?list=<id>
+//  - vídeo:    /watch?v=<id>, /shorts/<id>
+const CHANNEL_PATH = /^\/(?:@[^/]+|(?:channel|c|user)\/[^/]+)(?:\/.*)?$/
+const SHORTS_PATH = /^\/shorts\/[^/]+\/?$/
+
+function isChannelPath(url: URL): boolean {
+  return CHANNEL_PATH.test(url.pathname)
+}
+
+function isOrganizablePath(url: URL): boolean {
+  if (isChannelPath(url) || SHORTS_PATH.test(url.pathname)) return true
+  if (url.pathname === '/watch') return (url.searchParams.get('v') ?? '') !== ''
+  if (url.pathname === '/playlist') return (url.searchParams.get('list') ?? '') !== ''
+  return false
+}
+
+/**
+ * URL que um organizable pode guardar: https em `youtube.com`/`www.youtube.com`
+ * (sem credenciais nem porta) E um caminho que o MyTube usa (canal, playlist,
+ * vídeo, short).
+ */
+export function isYouTubeUrl(value: unknown): value is string {
+  const url = parseYouTubeUrl(value)
+  return url !== null && isOrganizablePath(url)
+}
+
+/** Como `isYouTubeUrl`, mas só formas de canal: o que o worker busca e o unsubscribe abre. */
+export function isYouTubeChannelUrl(value: unknown): value is string {
+  const url = parseYouTubeUrl(value)
+  return url !== null && isChannelPath(url)
+}
+
+/**
+ * Para voltar à página em que o usuário estava (fim do lote de unsubscribe): o
+ * caminho é livre (`/`, `/feed/channels`, uma busca), o host não.
+ */
+export function isYouTubeReturnUrl(value: unknown): value is string {
+  return parseYouTubeUrl(value) !== null
 }
 
 /** https em host de imagem do YouTube. */
