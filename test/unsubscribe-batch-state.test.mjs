@@ -56,7 +56,18 @@ globalThis.document = {
 // Timers fire right away, so the 800 ms / 1.5 s / 5 s waits do not slow the test.
 const realSetTimeout = globalThis.setTimeout
 globalThis.setTimeout = (fn) => realSetTimeout(fn, 0)
-const settle = () => new Promise(r => realSetTimeout(r, 60))
+// Poll for the expected state instead of sleeping a fixed time: the async chain
+// (checkPending -> executeUnsubscribe -> waitFor -> afterUnsubscribe) takes a
+// variable number of event-loop turns, longer on a loaded machine.
+async function until(cond, label, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs
+  while (!cond()) {
+    if (Date.now() > deadline) assert.fail(`timed out after ${timeoutMs} ms waiting for: ${label}`)
+    await new Promise(r => realSetTimeout(r, 5))
+  }
+}
+// Lets any stray follow-up action fire before a "nothing else happened" assertion.
+const quiet = () => new Promise(r => realSetTimeout(r, 30))
 
 const { triggerUnsubscribe, triggerBatchUnsubscribe } = await import('../src/content/unsubscribe.ts')
 
@@ -66,20 +77,20 @@ function reset(scenario) {
   page = { container: true, button: true, subscribed: true, dialog: true, ...scenario }
 }
 // Simulates the browser landing on `url` (what yt-navigate-finish + checkPending do).
-async function land(url) {
+// The caller then waits (`until`) for the state it expects.
+function land(url) {
   window.location.pathname = new URL(url).pathname
   handlers['yt-navigate-finish']()
-  await settle()
 }
 
 // 1. Normal batch still runs to completion and returns to the original page.
 reset()
 triggerBatchUnsubscribe([CHAN_A, CHAN_B])
 assert.equal(window.location.href, CHAN_A)
-await land(CHAN_A)
-assert.equal(window.location.href, CHAN_B, 'moves on to the second channel')
-await land(CHAN_B)
-assert.equal(window.location.href, START, 'returns to where the batch started')
+land(CHAN_A)
+await until(() => window.location.href === CHAN_B, 'moves on to the second channel')
+land(CHAN_B)
+await until(() => window.location.href === START, 'returns to where the batch started')
 assert.equal(memory.has('mytube-unsub-batch'), false)
 assert.equal(memory.has('mytube-unsub-return'), false)
 
@@ -91,7 +102,8 @@ for (const [label, scenario] of [
 ]) {
   reset(scenario)
   triggerBatchUnsubscribe([CHAN_A, CHAN_B, CHAN_C])
-  await land(CHAN_A)
+  land(CHAN_A)
+  await until(() => !memory.has('mytube-unsub-batch'), `${label}: batch abandoned`)
   assert.equal(memory.has('mytube-unsub-batch'), false, `${label}: BATCH_KEY must not be left behind`)
   assert.equal(memory.has('mytube-unsub-return'), false, `${label}: RETURN_KEY must not be left behind`)
 }
@@ -99,31 +111,62 @@ for (const [label, scenario] of [
 // 3. After a stall, a later single unsubscribe must not navigate to the old batch URLs.
 reset({ button: false })
 triggerBatchUnsubscribe([CHAN_A, CHAN_B, CHAN_C])
-await land(CHAN_A)
+land(CHAN_A)
+await until(() => !memory.has('mytube-unsub-batch'), 'stalled batch abandoned')
 page = { container: true, button: true, subscribed: true, dialog: true }
 window.location.href = CHAN_X; window.location.pathname = '/@other'
 triggerUnsubscribe(CHAN_X)
-await settle()
+await until(() => backs >= 1, 'single unsubscribe goes back')
+await quiet()
 assert.equal(window.location.href, CHAN_X, `navigated on to a stale batch URL: ${window.location.href}`)
 assert.equal(backs, 1, 'a single unsubscribe just goes back')
 
 // 4. A channel that is already unsubscribed is skipped and the batch carries on.
 reset({ subscribed: false })
 triggerBatchUnsubscribe([CHAN_A, CHAN_B])
-await land(CHAN_A)
-assert.equal(window.location.href, CHAN_B, 'not-subscribed channel is skipped, batch continues')
+land(CHAN_A)
+await until(() => window.location.href === CHAN_B, 'not-subscribed channel is skipped, batch continues')
 page.subscribed = true
-await land(CHAN_B)
-assert.equal(window.location.href, START)
+land(CHAN_B)
+await until(() => window.location.href === START, 'batch returns to the start page')
 assert.equal(memory.size, 0)
 
 // 5. A finished unsubscribe that is NOT the batch's current channel does not advance it.
 reset()
-memory.set('mytube-unsub-batch', JSON.stringify({ urls: [CHAN_B, CHAN_C], total: 3 }))
+memory.set('mytube-unsub-batch', JSON.stringify({ urls: [CHAN_B, CHAN_C], total: 3, updatedAt: Date.now() }))
 memory.set('mytube-unsub-return', START)
 window.location.href = CHAN_X; window.location.pathname = '/@other'
 triggerUnsubscribe(CHAN_X)
-await settle()
+await until(() => backs >= 1 && !memory.has('mytube-unsub-batch'), 'stale batch cleared and single unsubscribe goes back')
 assert.equal(window.location.href, CHAN_X, 'mismatched channel must not advance the batch')
 assert.equal(memory.has('mytube-unsub-batch'), false, 'stale batch is cleared')
 assert.equal(memory.has('mytube-unsub-return'), false)
+
+// 6. A batch that stopped making progress long ago is not resumed, even if the
+//    next unsubscribe happens to be the channel it stalled on.
+reset()
+memory.set('mytube-unsub-batch', JSON.stringify({ urls: [CHAN_B, CHAN_C], total: 3, updatedAt: Date.now() - 11 * 60 * 1000 }))
+memory.set('mytube-unsub-return', START)
+window.location.href = CHAN_B; window.location.pathname = '/@beta'
+triggerUnsubscribe(CHAN_B)
+await until(() => backs >= 1 && !memory.has('mytube-unsub-batch'), 'expired batch cleared and single unsubscribe goes back')
+assert.equal(window.location.href, CHAN_B, `expired batch must not be resumed: ${window.location.href}`)
+assert.equal(memory.has('mytube-unsub-return'), false)
+
+// 7. A fresh batch for the same channel IS still resumed (the TTL only drops stale ones).
+reset()
+memory.set('mytube-unsub-batch', JSON.stringify({ urls: [CHAN_B, CHAN_C], total: 3, updatedAt: Date.now() - 60 * 1000 }))
+memory.set('mytube-unsub-return', START)
+window.location.href = CHAN_B; window.location.pathname = '/@beta'
+triggerUnsubscribe(CHAN_B)
+await until(() => window.location.href === CHAN_C, 'a recent batch continues to the next channel')
+
+// 8. A batch with no timestamp (written by an older build or by the page) is treated as expired.
+reset()
+memory.set('mytube-unsub-batch', JSON.stringify({ urls: [CHAN_B, CHAN_C], total: 3 }))
+window.location.href = CHAN_B; window.location.pathname = '/@beta'
+triggerUnsubscribe(CHAN_B)
+await until(() => backs >= 1 && !memory.has('mytube-unsub-batch'), 'untimed batch cleared')
+assert.equal(window.location.href, CHAN_B)
+
+console.log('ok unsubscribe-batch-state')

@@ -11,7 +11,14 @@ interface PendingUnsub {
 interface BatchUnsub {
   urls: string[]
   total: number
+  /** Last time the batch made progress (ms epoch). A batch idle for BATCH_TTL_MS is dropped. */
+  updatedAt: number
 }
+
+// A batch normally advances every few seconds. One that has not moved for this
+// long was abandoned (lost navigation, closed tab, ...) and must not be resumed
+// by a later, unrelated unsubscribe of the same channel.
+const BATCH_TTL_MS = 10 * 60 * 1000
 
 export function triggerUnsubscribe(channelUrl: string): void {
   // Só navega para https://(www.)youtube.com. `organizable.url` vem do storage
@@ -35,7 +42,7 @@ export function triggerBatchUnsubscribe(requestedUrls: string[]): void {
   const channelUrls = requestedUrls.filter(isYouTubeUrl)
   if (channelUrls.length === 0) return
 
-  const batch: BatchUnsub = { urls: channelUrls, total: channelUrls.length }
+  const batch: BatchUnsub = { urls: channelUrls, total: channelUrls.length, updatedAt: Date.now() }
   sessionStorage.setItem(BATCH_KEY, JSON.stringify(batch))
   sessionStorage.setItem(RETURN_KEY, window.location.href)
 
@@ -81,6 +88,12 @@ function readBatch(): BatchUnsub | null {
   if (!raw) return null
   try {
     const batch = JSON.parse(raw) as BatchUnsub
+    // No timestamp (older build, or written by the page) counts as expired.
+    const age = typeof batch.updatedAt === 'number' ? Date.now() - batch.updatedAt : Infinity
+    if (!(age < BATCH_TTL_MS)) {
+      clearBatch()
+      return null
+    }
     batch.urls = Array.isArray(batch.urls) ? batch.urls.filter(isYouTubeUrl) : []
     return batch
   } catch {
@@ -115,6 +128,7 @@ function continueBatch(batch: BatchUnsub): void {
     return
   }
 
+  batch.updatedAt = Date.now()
   sessionStorage.setItem(BATCH_KEY, JSON.stringify(batch))
   const next = batch.urls[0]!
   sessionStorage.setItem(PENDING_KEY, JSON.stringify({ channelUrl: next }))
