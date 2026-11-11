@@ -11,7 +11,14 @@ interface PendingUnsub {
 interface BatchUnsub {
   urls: string[]
   total: number
+  /** Last time the batch made progress (ms epoch). A batch idle for BATCH_TTL_MS is dropped. */
+  updatedAt: number
 }
+
+// A batch normally advances every few seconds. One that has not moved for this
+// long was abandoned (lost navigation, closed tab, ...) and must not be resumed
+// by a later, unrelated unsubscribe of the same channel.
+const BATCH_TTL_MS = 10 * 60 * 1000
 
 export function triggerUnsubscribe(channelUrl: string): void {
   // Só navega para https://(www.)youtube.com. `organizable.url` vem do storage
@@ -23,7 +30,7 @@ export function triggerUnsubscribe(channelUrl: string): void {
   const targetPath = new URL(channelUrl).pathname
 
   if (window.location.pathname === targetPath || window.location.pathname.startsWith(targetPath + '/')) {
-    void executeUnsubscribe()
+    void executeUnsubscribe(channelUrl)
     return
   }
 
@@ -35,7 +42,7 @@ export function triggerBatchUnsubscribe(requestedUrls: string[]): void {
   const channelUrls = requestedUrls.filter(isYouTubeUrl)
   if (channelUrls.length === 0) return
 
-  const batch: BatchUnsub = { urls: channelUrls, total: channelUrls.length }
+  const batch: BatchUnsub = { urls: channelUrls, total: channelUrls.length, updatedAt: Date.now() }
   sessionStorage.setItem(BATCH_KEY, JSON.stringify(batch))
   sessionStorage.setItem(RETURN_KEY, window.location.href)
 
@@ -69,26 +76,45 @@ function waitFor(selector: string, timeout = 5000): Promise<HTMLElement | null> 
   })
 }
 
-function afterUnsubscribe(): void {
+function clearBatch(): void {
+  sessionStorage.removeItem(BATCH_KEY)
+  sessionStorage.removeItem(RETURN_KEY)
+}
+
+// Reads the batch from sessionStorage, revalidating it: the tab's sessionStorage
+// is also writable by the youtube.com page itself. An unreadable batch is dropped.
+function readBatch(): BatchUnsub | null {
   const raw = sessionStorage.getItem(BATCH_KEY)
-  if (!raw) {
-    setTimeout(() => history.back(), 800)
-    return
-  }
-
-  let batch: BatchUnsub
+  if (!raw) return null
   try {
-    batch = JSON.parse(raw) as BatchUnsub
+    const batch = JSON.parse(raw) as BatchUnsub
+    // No timestamp (older build, or written by the page) counts as expired.
+    const age = typeof batch.updatedAt === 'number' ? Date.now() - batch.updatedAt : Infinity
+    if (!(age < BATCH_TTL_MS)) {
+      clearBatch()
+      return null
+    }
+    batch.urls = Array.isArray(batch.urls) ? batch.urls.filter(isYouTubeUrl) : []
+    return batch
   } catch {
-    sessionStorage.removeItem(BATCH_KEY)
-    sessionStorage.removeItem(RETURN_KEY)
-    setTimeout(() => history.back(), 800)
-    return
+    clearBatch()
+    return null
   }
+}
 
-  // sessionStorage é da aba, mas a página youtube.com também escreve nele.
-  // Revalida antes de navegar.
-  batch.urls = Array.isArray(batch.urls) ? batch.urls.filter(isYouTubeUrl) : []
+function channelPath(url: string): string {
+  return new URL(url).pathname.replace(/\/+$/, '')
+}
+
+// The batch only moves when the channel just handled is the batch's current
+// item. Anything else means the stored batch belongs to an earlier run.
+function isBatchHead(batch: BatchUnsub, channelUrl: string): boolean {
+  const head = batch.urls[0]
+  return !!head && isYouTubeUrl(channelUrl) && channelPath(head) === channelPath(channelUrl)
+}
+
+// Drops the current item and goes to the next one, or finishes the batch.
+function continueBatch(batch: BatchUnsub): void {
   batch.urls.shift()
 
   if (batch.urls.length === 0) {
@@ -102,6 +128,7 @@ function afterUnsubscribe(): void {
     return
   }
 
+  batch.updatedAt = Date.now()
   sessionStorage.setItem(BATCH_KEY, JSON.stringify(batch))
   const next = batch.urls[0]!
   sessionStorage.setItem(PENDING_KEY, JSON.stringify({ channelUrl: next }))
@@ -111,19 +138,52 @@ function afterUnsubscribe(): void {
   }, 800)
 }
 
-async function executeUnsubscribe(): Promise<void> {
+function afterUnsubscribe(channelUrl: string): void {
+  const batch = readBatch()
+  if (!batch) {
+    setTimeout(() => history.back(), 800)
+    return
+  }
+
+  if (!isBatchHead(batch, channelUrl)) {
+    // Left over from a run that stalled: do not resume it.
+    clearBatch()
+    setTimeout(() => history.back(), 800)
+    return
+  }
+
+  continueBatch(batch)
+}
+
+// `executeUnsubscribe` ended without unsubscribing `channelUrl`. A batch must not
+// stay in sessionStorage for a later, unrelated unsubscribe to pick up. When the
+// channel was simply already unsubscribed, the batch moves on to its next item;
+// on any failure it is abandoned.
+function settleBatchWithoutUnsubscribe(channelUrl: string, skip: boolean): void {
+  const batch = readBatch()
+  if (!batch) return
+  if (skip && isBatchHead(batch, channelUrl)) {
+    continueBatch(batch)
+    return
+  }
+  clearBatch()
+}
+
+async function executeUnsubscribe(channelUrl: string): Promise<void> {
   const container = await waitFor(
     'ytd-subscribe-button-renderer, yt-subscribe-button-view-model',
     4000,
   )
   if (!container) {
     console.warn('[MyTube] Subscribe button container not found')
+    settleBatchWithoutUnsubscribe(channelUrl, false)
     return
   }
 
   const btn = container.querySelector('button') as HTMLElement | null
   if (!btn) {
     console.warn('[MyTube] Subscribe button not found')
+    settleBatchWithoutUnsubscribe(channelUrl, false)
     return
   }
 
@@ -135,6 +195,7 @@ async function executeUnsubscribe(): Promise<void> {
 
   if (!isSubscribed) {
     console.log('[MyTube] Channel not subscribed, skipping')
+    settleBatchWithoutUnsubscribe(channelUrl, true)
     return
   }
 
@@ -153,7 +214,7 @@ async function executeUnsubscribe(): Promise<void> {
     if (confirmBtn) {
       confirmBtn.click()
       console.log('[MyTube] Unsubscribed successfully')
-      afterUnsubscribe()
+      afterUnsubscribe(channelUrl)
       return
     }
   }
@@ -181,9 +242,13 @@ async function executeUnsubscribe(): Promise<void> {
     if (confirmDialog) {
       ;(confirmDialog as HTMLElement).click()
       console.log('[MyTube] Unsubscribed successfully (via menu)')
-      afterUnsubscribe()
+      afterUnsubscribe(channelUrl)
+      return
     }
   }
+
+  console.warn('[MyTube] Could not confirm the unsubscribe')
+  settleBatchWithoutUnsubscribe(channelUrl, false)
 }
 
 async function checkPending(): Promise<void> {
@@ -199,7 +264,13 @@ async function checkPending(): Promise<void> {
   }
 
   sessionStorage.removeItem(PENDING_KEY)
-  await executeUnsubscribe()
+  // The pending URL is what we navigated to; sessionStorage is also writable by
+  // the page, so it is revalidated before it identifies the channel.
+  if (!isYouTubeUrl(pending?.channelUrl)) {
+    clearBatch()
+    return
+  }
+  await executeUnsubscribe(pending.channelUrl)
 }
 
 document.addEventListener('yt-navigate-finish', () => {

@@ -208,6 +208,10 @@ function normalizeUrl(url: string): string {
   }
 }
 
+function areDifferentUcChannels(a: { youtubeId: string }, b: { youtubeId: string }): boolean {
+  return a.youtubeId.startsWith('UC') && b.youtubeId.startsWith('UC') && a.youtubeId !== b.youtubeId
+}
+
 export async function syncOrganizables(items: Omit<Organizable, 'id' | 'addedAt' | 'lastSyncedAt'>[]): Promise<void> {
   const state = await getState()
   const deleted = new Set(state.deletedYoutubeIds ?? [])
@@ -224,10 +228,16 @@ export async function syncOrganizables(items: Omit<Organizable, 'id' | 'addedAt'
       o => o.youtubeId === item.youtubeId && o.type === item.type
     )
 
+    // Two different `UC` ids are two different channels, whatever URL or handle
+    // they share (a handle can be reassigned). Such an entry is never a match:
+    // the incoming channel becomes its own entry and the saved one keeps its
+    // name, url, thumbnail and folder.
+    const isOtherUcChannel = (o: Organizable): boolean => areDifferentUcChannels(o, item)
+
     if (!existing && item.url) {
       const itemPath = normalizeUrl(item.url)
       existing = state.organizables.find(
-        o => o.type === item.type && o.url && normalizeUrl(o.url) === itemPath
+        o => o.type === item.type && !isOtherUcChannel(o) && o.url && normalizeUrl(o.url) === itemPath
       )
       if (existing) {
         const oldKey = `${existing.type}:${existing.youtubeId}`
@@ -240,7 +250,7 @@ export async function syncOrganizables(items: Omit<Organizable, 'id' | 'addedAt'
 
     if (!existing && item.type === 'channel' && incomingHandle) {
       existing = state.organizables.find(o => {
-        if (o.type !== 'channel') return false
+        if (o.type !== 'channel' || isOtherUcChannel(o)) return false
         const existingHandle = o.handle ?? extractHandleFromPath(o.url)
         return existingHandle === incomingHandle
       })
@@ -254,9 +264,12 @@ export async function syncOrganizables(items: Omit<Organizable, 'id' | 'addedAt'
       }
     }
 
+    // Display names are not unique on YouTube, so a name match is only a
+    // rescue for legacy entries that never got a real `UC` id. An entry that
+    // already has one is a different channel that happens to share the name.
     if (!existing && item.type === 'channel' && item.name) {
       existing = state.organizables.find(
-        o => o.type === 'channel' && o.name === item.name
+        o => o.type === 'channel' && o.name === item.name && !o.youtubeId.startsWith('UC')
       )
       if (existing) {
         console.log(`[MyTube] syncOrganizables: matched "${item.name}" by name (ID: ${existing.youtubeId} → ${item.youtubeId})`)
@@ -269,7 +282,9 @@ export async function syncOrganizables(items: Omit<Organizable, 'id' | 'addedAt'
     }
 
     if (existing) {
-      if (existing.youtubeId !== item.youtubeId && item.youtubeId.startsWith('UC')) {
+      // Never replace one `UC` id with another: that would re-point the saved
+      // entry (folder, tags) at a different channel.
+      if (existing.youtubeId !== item.youtubeId && item.youtubeId.startsWith('UC') && !existing.youtubeId.startsWith('UC')) {
         normalized++
         existing.youtubeId = item.youtubeId
       }
@@ -322,7 +337,7 @@ export async function syncOrganizables(items: Omit<Organizable, 'id' | 'addedAt'
     if (!o.url) continue
     const urlKey = `${o.type}:${normalizeUrl(o.url)}`
     const prev = seenUrls.get(urlKey)
-    if (prev !== undefined) {
+    if (prev !== undefined && !areDifferentUcChannels(state.organizables[prev], o)) {
       const prevItem = state.organizables[prev]
       if (prevItem.folderId && !o.folderId) {
         if (o.youtubeId.startsWith('UC') && !prevItem.youtubeId.startsWith('UC')) {
@@ -352,7 +367,7 @@ export async function syncOrganizables(items: Omit<Organizable, 'id' | 'addedAt'
     if (!handle) continue
     const handleKey = `channel:${handle}`
     const prev = seenHandles.get(handleKey)
-    if (prev !== undefined) {
+    if (prev !== undefined && !areDifferentUcChannels(state.organizables[prev], o)) {
       const prevItem = state.organizables[prev]
       if (prevItem.folderId && !o.folderId) {
         if (o.youtubeId.startsWith('UC') && !prevItem.youtubeId.startsWith('UC')) {
