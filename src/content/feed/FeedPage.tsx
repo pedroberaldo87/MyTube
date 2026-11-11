@@ -1,6 +1,7 @@
 import { h } from 'preact'
 import { useCallback, useContext, useEffect, useMemo, useState } from 'preact/hooks'
 import { sendMessage } from '../../shared/messages'
+import { safeImageSrc, safeYouTubeHref } from '../../shared/backup-validate'
 import { loadSettings } from '../../styles/theme'
 import { useT, I18nContext } from '../../shared/i18n'
 import type { FeedVideo } from '../../shared/types'
@@ -95,7 +96,9 @@ export function FeedPage({ folderId, folderName, onClose }: FeedPageProps) {
     })
   }, [])
 
-  const handleVideoClick = useCallback((url: string) => {
+  const handleVideoClick = useCallback((rawUrl: string) => {
+    const url = safeYouTubeHref(rawUrl)
+    if (!url) return
     if (openInNewTab) {
       window.open(url, '_blank')
     } else {
@@ -313,9 +316,9 @@ export function FeedPage({ folderId, folderName, onClose }: FeedPageProps) {
                     onClick={() => handleVideoClick(video.url)}
                   >
                     <div style={{ position: 'relative' }}>
-                      {video.thumbnailUrl ? (
+                      {safeImageSrc(video.thumbnailUrl) ? (
                         <img
-                          src={video.thumbnailUrl}
+                          src={safeImageSrc(video.thumbnailUrl)}
                           alt=""
                           style={thumbStyle}
                           loading="lazy"

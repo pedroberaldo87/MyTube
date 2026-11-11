@@ -1,15 +1,18 @@
 import type { AppState, Folder, Organizable, Tag } from './types'
-import { sanitizeState } from './backup-validate'
+import { repairState } from './backup-validate'
 
 const STORAGE_KEY = 'mytube_state'
 
-// O que está no storage passa pelo mesmo validador do import: um estado que
-// entrou torto (backup antigo, edição manual) não derruba a renderização nem
-// chega ao fetch/navegação. Devolve sempre um objeto NOVO, então quem muta o
-// resultado e regrava não suja um estado vazio compartilhado.
+// O que está no storage só tem a forma consertada (arrays e campos faltando
+// ganham default; entrada que não é objeto é pulada). NÃO se descarta nem se
+// esvazia item por causa de `url` ou host de miniatura: quem lê, muta e
+// regrava apagaria dado legado em silêncio. A validação estrita fica nos
+// importadores, e cada ponto de uso (fetch, navegação, href, src) tem a sua
+// guarda. Devolve sempre um objeto NOVO, então quem muta o resultado e regrava
+// não suja um estado vazio compartilhado.
 export async function getState(): Promise<AppState> {
   const result = await chrome.storage.local.get(STORAGE_KEY)
-  return sanitizeState(result[STORAGE_KEY])
+  return repairState(result[STORAGE_KEY])
 }
 
 export async function setState(state: AppState): Promise<void> {

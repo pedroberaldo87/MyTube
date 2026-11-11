@@ -2,14 +2,16 @@ import type { AppState, Folder, Organizable, Tag, WatchEntry } from './types'
 
 /**
  * Validação por elemento de tudo que entra no estado do MyTube vindo de fora do
- * código: backup importado (dashboard e sidebar) e o que volta do
- * `chrome.storage.local` em `getState`. Também guarda os pontos onde uma URL
- * guardada é USADA (fetch do service worker, navegação, `href`, `src`).
+ * código: backup importado (dashboard e sidebar). O que volta do
+ * `chrome.storage.local` em `getState` só tem a FORMA consertada
+ * (`repairState`), sem apagar nem esvaziar nada por causa de `url`/host; quem
+ * USA uma URL guardada (fetch do service worker, navegação, `href`, `src`) a
+ * valida no ponto de uso.
  *
  * Módulo puro de propósito: sem `chrome`, sem DOM, sem IndexedDB. Roda no
  * service worker, na sidebar, no dashboard e nos testes.
  *
- * Política:
+ * Política do IMPORT (`sanitize*`):
  *  - `url` do organizable: só `https://youtube.com` ou `https://www.youtube.com`
  *    (sem credenciais, sem porta). Elemento com `url` inválida é DESCARTADO;
  *  - `thumbnailUrl`: só https em host de imagem do YouTube. Inválida vira `''`
@@ -21,15 +23,22 @@ import type { AppState, Folder, Organizable, Tag, WatchEntry } from './types'
 
 const YOUTUBE_HOSTS = new Set(['www.youtube.com', 'youtube.com'])
 
-// Hosts de imagem que o próprio MyTube grava: i.ytimg.com (capas de vídeo e
-// playlist, fixture do scraper), yt3.ggpht.com e yt3.googleusercontent.com
-// (avatares de canal), i9.ytimg.com (capas em CDN alternativo).
-const YOUTUBE_IMAGE_HOSTS = new Set([
-  'i.ytimg.com',
-  'i9.ytimg.com',
-  'yt3.ggpht.com',
-  'yt3.googleusercontent.com',
-])
+// Hosts de imagem do YouTube: capas de vídeo e playlist (i.ytimg.com, i1…i9,
+// s.ytimg.com) e avatares de canal (yt3/yt4.ggpht.com, yt3.googleusercontent.com,
+// lh3.googleusercontent.com), mais img.youtube.com. Por sufixo de domínio ou
+// padrão estreito, sempre em https, para um CDN novo do próprio YouTube não
+// apagar a figura. `googleusercontent.com` inteiro NÃO é aceito (hospeda
+// conteúdo de terceiros); só os nós de imagem lhN/ytN. `evilytimg.com` e
+// `ytimg.com.evil.example` não casam.
+const YOUTUBE_IMAGE_HOST_SUFFIXES = ['.ytimg.com', '.ggpht.com']
+const YOUTUBE_IMAGE_HOSTS = new Set(['img.youtube.com'])
+const GOOGLE_IMAGE_HOST = /^(?:lh|yt)\d+\.googleusercontent\.com$/
+
+function isYouTubeImageHost(hostname: string): boolean {
+  return YOUTUBE_IMAGE_HOSTS.has(hostname)
+    || GOOGLE_IMAGE_HOST.test(hostname)
+    || YOUTUBE_IMAGE_HOST_SUFFIXES.some(suffix => hostname.endsWith(suffix))
+}
 
 const MAX_URL_LENGTH = 4096
 const ORGANIZABLE_TYPES = new Set<Organizable['type']>(['channel', 'playlist', 'video'])
@@ -60,7 +69,7 @@ export function isYouTubeUrl(value: unknown): value is string {
 /** https em host de imagem do YouTube. */
 export function isYouTubeImageUrl(value: unknown): value is string {
   const url = parseHttpsUrl(value)
-  return url !== null && YOUTUBE_IMAGE_HOSTS.has(url.hostname)
+  return url !== null && isYouTubeImageHost(url.hostname)
 }
 
 /** Para `href`/navegação: a própria URL se for do YouTube, senão `undefined`. */
@@ -211,16 +220,78 @@ function sanitizeOptionalState(r: Rec): Pick<AppState, 'deletedYoutubeIds' | 'ne
 }
 
 /**
- * Estado lido do storage. Nunca lança e sempre devolve um objeto NOVO (quem
- * chama muta o resultado e regrava; um vazio compartilhado vazaria entre
- * chamadas).
+ * Estado lido do storage, SEM PERDA. Só conserta a forma (arrays e campos
+ * faltando ganham default; entrada que não é objeto é pulada). Nunca descarta
+ * nem esvazia um item por causa de `url` ou host de `thumbnailUrl`: quem lê e
+ * regrava (`getState` → `setState`) apagaria dado legado em silêncio. Os
+ * pontos de uso validam (`safeYouTubeHref`, `safeImageSrc`, guardas do worker).
+ *
+ * Custo O(n), sem `new URL`. Item já bem formado é devolvido como está (mesma
+ * referência do que veio do storage); só o que precisa de conserto é copiado.
+ * Sempre devolve um objeto de estado NOVO (quem chama muta e regrava).
  */
-export function sanitizeState(raw: unknown): AppState {
+function repairList<T extends object>(raw: unknown, fix: (r: Rec) => T): T[] {
+  if (!Array.isArray(raw)) return []
+  const out: T[] = []
+  for (const element of raw) {
+    const r = asRecord(element)
+    if (r) out.push(fix(r))
+  }
+  return out
+}
+
+function stringsOnly(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((t): t is string => typeof t === 'string') : []
+}
+
+function repairOrganizable(r: Rec): Organizable {
+  const tagIds = r['tagIds']
+  const wellFormed = typeof r['name'] === 'string' && typeof r['url'] === 'string'
+    && typeof r['thumbnailUrl'] === 'string'
+    && (r['folderId'] === null || typeof r['folderId'] === 'string')
+    && Array.isArray(tagIds) && tagIds.every(t => typeof t === 'string')
+    && typeof r['isSubscribed'] === 'boolean'
+    && typeof r['addedAt'] === 'number' && Number.isFinite(r['addedAt'])
+    && typeof r['lastSyncedAt'] === 'number' && Number.isFinite(r['lastSyncedAt'])
+  if (wellFormed) return r as unknown as Organizable
+  return {
+    ...r,
+    name: str(r['name']),
+    url: str(r['url']),
+    thumbnailUrl: str(r['thumbnailUrl']),
+    folderId: strOrNull(r['folderId']),
+    tagIds: stringsOnly(tagIds),
+    isSubscribed: r['isSubscribed'] === true,
+    addedAt: num(r['addedAt'], 0),
+    lastSyncedAt: num(r['lastSyncedAt'], 0),
+  } as unknown as Organizable
+}
+
+function repairFolder(r: Rec): Folder {
+  if (typeof r['name'] === 'string' && (r['parentId'] === null || typeof r['parentId'] === 'string')
+    && typeof r['color'] === 'string' && typeof r['order'] === 'number' && Number.isFinite(r['order'])) {
+    return r as unknown as Folder
+  }
+  return {
+    ...r,
+    name: str(r['name']),
+    parentId: strOrNull(r['parentId']),
+    color: str(r['color'], DEFAULT_COLOR),
+    order: num(r['order'], 0),
+  } as unknown as Folder
+}
+
+function repairTag(r: Rec): Tag {
+  if (typeof r['name'] === 'string' && typeof r['color'] === 'string') return r as unknown as Tag
+  return { ...r, name: str(r['name']), color: str(r['color'], DEFAULT_COLOR) } as unknown as Tag
+}
+
+export function repairState(raw: unknown): AppState {
   const r = asRecord(raw) ?? {}
   return {
-    organizables: sanitizeList(r['organizables'], sanitizeOrganizable).items,
-    folders: sanitizeList(r['folders'], sanitizeFolder).items,
-    tags: sanitizeList(r['tags'], sanitizeTag).items,
+    organizables: repairList(r['organizables'], repairOrganizable),
+    folders: repairList(r['folders'], repairFolder),
+    tags: repairList(r['tags'], repairTag),
     ...sanitizeOptionalState(r),
   }
 }
