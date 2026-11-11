@@ -183,17 +183,19 @@ export async function importWatchHistory(entries: unknown): Promise<void> {
 }
 
 /**
- * Troca o histórico inteiro pelo do backup, em UMA transação: se uma entrada não
+ * "Substituir" do restore: limpa e grava na MESMA transação. Se uma entrada não
  * puder ser gravada, a transação é abortada e o histórico anterior continua lá.
- * Usa o getDB() (nome e versão num lugar só): abrir o banco com versão fixa em
- * outro arquivo quebra com VersionError a cada migração.
+ * Cada elemento é validado aqui também. Usa o getDB() (nome e versão num lugar
+ * só): abrir o banco com versão fixa em outro arquivo quebra com VersionError a
+ * cada migração.
  */
-export async function replaceWatchHistory(entries: WatchEntry[]): Promise<void> {
+export async function replaceWatchHistory(entries: unknown): Promise<void> {
+  const { entries: valid } = sanitizeWatchEntries(entries)
   const db = await getDB()
   const tx = db.transaction('watchHistory', 'readwrite')
   try {
     await tx.store.clear()
-    for (const entry of entries) {
+    for (const entry of valid) {
       await tx.store.add(entry)
     }
   } catch (err) {

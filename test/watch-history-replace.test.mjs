@@ -28,10 +28,22 @@ await replaceWatchHistory([entry('new-1', 3)])
 assert.deepEqual(await ids(), ['new-1'], 'replace did not swap the history')
 
 // 2. a failing entry leaves the previous history intact
-await assert.rejects(
-  replaceWatchHistory([entry('new-2', 4), { videoId: 'bad', run() {} }]),
-  'a non-storable entry did not fail the replace',
-)
+// (the validator already drops malformed entries, so the failure is injected at the store)
+const fdbAdd = IDBObjectStore.prototype.add
+let adds = 0
+IDBObjectStore.prototype.add = function (...args) {
+  if (++adds === 2) throw new Error('simulated store failure')
+  return fdbAdd.apply(this, args)
+}
+try {
+  await assert.rejects(
+    replaceWatchHistory([entry('new-2', 4), entry('new-3', 5), entry('new-4', 6)]),
+    /simulated store failure/,
+    'a failing store write did not fail the replace',
+  )
+} finally {
+  IDBObjectStore.prototype.add = fdbAdd
+}
 assert.deepEqual(await ids(), ['new-1'], 'a failed replace lost or changed the previous history')
 
 // 3. empty backup

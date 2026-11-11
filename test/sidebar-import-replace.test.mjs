@@ -13,14 +13,15 @@ import { chromium } from 'playwright'
 //  B. If the database step fails, mytube_state is untouched and the user sees the
 //     error. The state is only replaced once the history has been replaced.
 //
-// The real component and the real db.ts, bundled and run in Chromium (real
-// IndexedDB, real VersionError).
+// The real component, the worker's real WATCH_* handler and the real db.ts,
+// bundled and run in Chromium (real IndexedDB, real VersionError). The sidebar
+// reaches the history only through messages to the worker.
 
 const ROOT = new URL('..', import.meta.url).pathname
 const { t } = await import('../src/shared/i18n.ts')
 
-const OLD_STATE = { organizables: [], folders: [{ id: 'f-old', name: 'Old folder' }], tags: [] }
-const NEW_STATE = { organizables: [], folders: [{ id: 'f-new', name: 'New folder' }], tags: [] }
+const OLD_STATE = { organizables: [], folders: [{ id: 'f-old', name: 'Old folder', parentId: null, color: '#888888', order: 0 }], tags: [] }
+const NEW_STATE = { organizables: [], folders: [{ id: 'f-new', name: 'New folder', parentId: null, color: '#888888', order: 0 }], tags: [] }
 const backup = {
   version: 1,
   exportedAt: '2026-01-02T00:00:00.000Z',
@@ -34,8 +35,12 @@ const bundle = await esbuild.build({
     contents: `
       import { h, render } from 'preact'
       import { ExportImport } from './src/content/sidebar/components/ExportImport.tsx'
-      import { exportWatchHistory, importWatchHistory } from './src/shared/db.ts'
-      window.__db = { exportWatchHistory, importWatchHistory }
+      import * as db from './src/shared/db.ts'
+      import { handleWatchMessage } from './src/background/watch-history.ts'
+      // This page stands in for the extension origin: the sidebar never opens the
+      // database itself, the WATCH_* messages reach the worker's handler and db.ts.
+      window.__db = { exportWatchHistory: db.exportWatchHistory, importWatchHistory: db.importWatchHistory }
+      window.__worker = msg => handleWatchMessage(msg, db)
       window.__mount = el => render(h(ExportImport, { onStateChange() {} }), el)
     `,
     resolveDir: ROOT,
@@ -58,7 +63,10 @@ try {
     await page.evaluate(({ oldState }) => {
       window.__store = { mytube_state: oldState }
       window.chrome = {
-        runtime: { async sendMessage(msg) { return msg.type === 'GET_STATE' ? window.__store.mytube_state : { ok: true } } },
+        runtime: { async sendMessage(msg) {
+          if (msg.type === 'GET_STATE') return window.__store.mytube_state
+          return window.__worker(msg)
+        } },
         storage: { local: {
           async get(k) { return typeof k === 'string' ? { [k]: window.__store[k] } : { ...window.__store } },
           async set(o) { Object.assign(window.__store, structuredClone(o)) },
@@ -93,7 +101,10 @@ try {
   await page.waitForFunction(label => document.getElementById('app').innerText.includes(label), t('data.exported', 'en'))
   await pickBackup(page)
   await clickText(page, t('data.replace', 'en'))
-  await page.waitForFunction(() => /✓|failed|Falha/i.test(document.getElementById('app').innerText))
+  // Wait for the OUTCOME of Replace. "✓ Exported" from the step above is still on
+  // screen, so a bare /✓/ matched it at once and the assert below raced the restore.
+  await page.waitForFunction(labels => labels.some(l => document.getElementById('app').innerText.includes(l)),
+    [t('data.imported', 'en'), t('data.importFailed', 'en')])
   let text = await screen(page)
   assert.ok(text.includes(t('data.imported', 'en')), `Replace after an export did not succeed:\n${text}`)
   assert.deepEqual(await page.evaluate(() => window.__store.mytube_state), NEW_STATE, 'Replace did not restore the state')

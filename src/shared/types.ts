@@ -119,6 +119,10 @@ export type MessageType =
   | { type: 'GET_HOME_FEED'; payload: { mode: 'new-only' | 'latest'; latestCount?: number } }
   | { type: 'GET_HOME_NUDGE_DATA'; payload?: undefined }
   | { type: 'REMOVE_WATCH_ENTRY'; payload: { videoId: string } }
+  // Backup do histórico de exibição. A sidebar (youtube.com) não abre IndexedDB:
+  // pede ao worker, que valida cada elemento e escreve no banco da extensão.
+  | { type: 'WATCH_EXPORT'; payload?: undefined }
+  | { type: 'WATCH_IMPORT'; payload: { mode: 'merge' | 'replace'; entries: WatchEntry[] } }
   | { type: 'AI_LIST_PROVIDERS'; payload?: undefined }
   // `model` ausente = preservar o gravado (a página de chave não conhece o modelo
   // corrente e não deve regravar um snapshot velho dele).
@@ -153,6 +157,8 @@ export type AIOAuthBeginResponse = DeviceAuthStart | { ok: false; error: string 
 
 export type MessageResponse<T extends MessageType['type']> =
   T extends 'GET_STATE' ? AppState :
+  T extends 'WATCH_EXPORT' ? WatchEntry[] :
+  T extends 'WATCH_IMPORT' ? { ok: boolean; imported?: number; dropped?: number } :
   T extends 'GET_CHANNEL_INFO' ? Organizable | null :
   T extends 'GET_NEW_VIDEO_COUNTS' ? Record<string, number> :
   T extends 'GET_FOLDER_FEED' ? FeedVideo[] :

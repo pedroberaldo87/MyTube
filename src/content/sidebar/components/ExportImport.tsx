@@ -1,10 +1,10 @@
 import { h } from 'preact'
 import { useRef, useState } from 'preact/hooks'
-import { exportWatchHistory, importWatchHistory, replaceWatchHistory } from '../../../shared/db'
 import { sendMessage } from '../../../shared/messages'
 import type { AppState, WatchEntry } from '../../../shared/types'
 import { useT } from '../../../shared/i18n'
 import { sanitizeBackupCollections } from '../../../shared/backup-validate'
+import { normalizeHistoryField, planHistoryReplace, restoreReplace } from '../../../shared/restore'
 
 export interface ExportImportProps {
   onStateChange: () => void
@@ -23,6 +23,11 @@ type Status = { kind: 'success' | 'error'; text: string } | null
 interface PendingBackup extends BackupFile {
   /** Elementos que o validador descartou (URL fora do YouTube, tipo errado, null...). */
   dropped: number
+  /**
+   * O que "Substituir" grava no lugar do histórico atual; `null` = deixar o
+   * histórico como está (backup sem `watchHistory`, ou sem nenhuma entrada válida).
+   */
+  historyReplacement: WatchEntry[] | null
 }
 
 /**
@@ -42,7 +47,7 @@ function parseBackup(data: unknown): PendingBackup | null {
     folders: s['folders'],
     tags: s['tags'],
     deletedYoutubeIds: s['deletedYoutubeIds'],
-    watchHistory: d['watchHistory'],
+    watchHistory: normalizeHistoryField(d['watchHistory']),
   })
   if (!clean) return null
   const { watchHistory, dropped, ...cleanState } = clean
@@ -52,7 +57,13 @@ function parseBackup(data: unknown): PendingBackup | null {
     state: cleanState,
     watchHistory,
     dropped: dropped.organizables + dropped.folders + dropped.tags + dropped.watchHistory,
+    historyReplacement: planHistoryReplace(d['watchHistory'], watchHistory),
   }
+}
+
+async function importWatchHistoryViaWorker(mode: ImportMode, entries: WatchEntry[]): Promise<void> {
+  const res = await sendMessage({ type: 'WATCH_IMPORT', payload: { mode, entries } })
+  if (!res?.ok) throw new Error('watch history import failed')
 }
 
 function formatDate(iso: string): string {
@@ -72,7 +83,10 @@ export function ExportImport({ onStateChange }: ExportImportProps) {
     setExportStatus(null)
     try {
       const state = await sendMessage({ type: 'GET_STATE' })
-      const watchHistory = await exportWatchHistory()
+      // O histórico mora no IndexedDB da extensão; a sidebar roda no youtube.com e
+      // não o abre (abriria o banco da página). Pede ao service worker.
+      const watchHistory = await sendMessage({ type: 'WATCH_EXPORT' })
+      if (!Array.isArray(watchHistory)) throw new Error('watch history unavailable')
       const backup: BackupFile = {
         version: 1,
         exportedAt: new Date().toISOString(),
@@ -126,10 +140,14 @@ export function ExportImport({ onStateChange }: ExportImportProps) {
       const { state, watchHistory, dropped } = pendingBackup
 
       if (mode === 'replace') {
-        // The database step goes first and is atomic: if it fails, mytube_state is
-        // still the user's own, not a half-restore.
-        await replaceWatchHistory(watchHistory)
-        await chrome.storage.local.set({ mytube_state: state })
+        // Histórico PRIMEIRO (no service worker, numa transação só): se falhar, o
+        // mytube_state do usuário continua intacto. Sem histórico válido no
+        // backup, o histórico atual não é tocado.
+        await restoreReplace(
+          pendingBackup.historyReplacement,
+          (entries) => importWatchHistoryViaWorker('replace', entries),
+          () => chrome.storage.local.set({ mytube_state: state }),
+        )
       } else {
         // Merge: get current state, merge organizables by youtubeId
         const currentState = await sendMessage({ type: 'GET_STATE' })
@@ -150,7 +168,7 @@ export function ExportImport({ onStateChange }: ExportImportProps) {
         }
 
         await chrome.storage.local.set({ mytube_state: mergedState })
-        await importWatchHistory(watchHistory)
+        await importWatchHistoryViaWorker('merge', watchHistory)
       }
 
       setPendingBackup(null)
