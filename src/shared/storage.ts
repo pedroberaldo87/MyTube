@@ -251,9 +251,12 @@ export async function syncOrganizables(items: Omit<Organizable, 'id' | 'addedAt'
       }
     }
 
+    // Display names are not unique on YouTube, so a name match is only a
+    // rescue for legacy entries that never got a real `UC` id. An entry that
+    // already has one is a different channel that happens to share the name.
     if (!existing && item.type === 'channel' && item.name) {
       existing = state.organizables.find(
-        o => o.type === 'channel' && o.name === item.name
+        o => o.type === 'channel' && o.name === item.name && !o.youtubeId.startsWith('UC')
       )
       if (existing) {
         console.log(`[MyTube] syncOrganizables: matched "${item.name}" by name (ID: ${existing.youtubeId} → ${item.youtubeId})`)
@@ -266,7 +269,9 @@ export async function syncOrganizables(items: Omit<Organizable, 'id' | 'addedAt'
     }
 
     if (existing) {
-      if (existing.youtubeId !== item.youtubeId && item.youtubeId.startsWith('UC')) {
+      // Never replace one `UC` id with another: that would re-point the saved
+      // entry (folder, tags) at a different channel.
+      if (existing.youtubeId !== item.youtubeId && item.youtubeId.startsWith('UC') && !existing.youtubeId.startsWith('UC')) {
         normalized++
         existing.youtubeId = item.youtubeId
       }
